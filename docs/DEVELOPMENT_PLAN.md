@@ -63,14 +63,15 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 1: Design System and Immersive Frontend Shell
 
-**Status:** ⏳ Planned
+**Status:** ✅ Completed
 
 ### Objectives
-- Initialize the frontend project (React + TypeScript + Vite + Tailwind CSS).
-- Implement the design token system (colors, typography, spacing).
-- Build the application shell (layout, navigation, routing).
-- Create foundational UI components.
-- Establish the visual identity with an immersive, dark-themed interface.
+- Initialize the frontend project (React + TypeScript + Vite + Tailwind CSS v4).
+- Implement the design token system (colors, typography, spacing, CSS custom properties).
+- Build the application shell (responsive layout, sidebar navigation, header, routing).
+- Create foundational UI components (Button, IconButton, Input, Badge, ProgressBar, Card, Modal, EmptyState, SkipLink).
+- Establish the visual identity with an immersive, dark-first interface and violet/cyan accents.
+- Implement working interactive pages: Dashboard (`/`), Course Discovery (`/explore`), Interactive Skill Map (`/skills`), Course Overview (`/courses/:slug`), and Fallback (`*`).
 
 ### Dependencies
 - Phase 0 (product specification and design direction).

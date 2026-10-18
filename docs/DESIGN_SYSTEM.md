@@ -33,28 +33,34 @@ SkillVerse should feel **immersive, focused and premium** — a workspace for le
 
 ## Color Principles
 
-### Proposed Palette Direction (to be refined in Phase 1)
+### Implemented Design Tokens (Phase 1)
 
-| Role | Direction | Notes |
-|---|---|---|
-| Background (base) | Very dark neutral (near-black, slightly warm or cool) | Primary surface |
-| Background (elevated) | Slightly lighter dark neutral | Cards, panels, modals |
-| Background (inset) | Slightly darker than base | Code editors, embedded areas |
-| Text (primary) | Off-white / light gray | Body text, headings |
-| Text (secondary) | Medium gray | Supporting text, labels |
-| Text (muted) | Darker gray | Captions, timestamps |
-| Accent (primary) | Violet range | Primary actions, active navigation, links |
-| Accent (secondary) | Cyan range | Progress indicators, success states, data visualization |
-| Success | Green-tinted | Passed tests, completed lessons |
-| Warning | Amber-tinted | Hints, partial completion |
-| Error | Red-tinted | Failed tests, validation errors |
-| Border | Very subtle, low-contrast | Structural separation without visual noise |
+All components in SkillVerse reference semantic design tokens configured via Tailwind CSS v4 and CSS variables in `src/index.css`:
 
-**Principle:** Colors serve functional roles. Every color in the system has a defined purpose. Decorative color is avoided.
+| CSS Variable | Tailwind Token | Dark Theme Value (Phase 1) | Light Theme Value (Phase 6) | Purpose |
+|---|---|---|---|---|
+| `--bg-base` | `bg-bg-base` | `#0B0F17` | `#F8FAFC` | Primary viewport surface |
+| `--bg-elevated` | `bg-bg-elevated` | `#111726` | `#FFFFFF` | Sidebar, dialog modals, elevated cards |
+| `--bg-surface` | `bg-bg-surface` | `#172033` | `#F1F5F9` | Interactive chips, inner panels, table rows |
+| `--bg-inset` | `bg-bg-inset` | `#070A10` | `#E2E8F0` | Input controls, progress tracks, code areas |
+| `--text-primary` | `text-text-primary` | `#F8FAFC` | `#0F172A` | Page titles, card headers, high-contrast labels |
+| `--text-secondary` | `text-text-secondary` | `#94A3B8` | `#475569` | Body text, chapter outlines, descriptions |
+| `--text-muted` | `text-text-muted` | `#64748B` | `#94A3B8` | Timestamps, lesson indices, mono metadata |
+| `--border-subtle` | `border-border-subtle` | `rgba(255, 255, 255, 0.08)` | `rgba(0, 0, 0, 0.08)` | Section boundaries, card outlines |
+| `--border-medium` | `border-border-medium` | `rgba(255, 255, 255, 0.16)` | `rgba(0, 0, 0, 0.16)` | Hover borders, active cards, modal dividers |
+| `--border-focus` | `border-border-focus` | `#8B5CF6` | `#7C3AED` | Keyboard focus indicator outline |
+| `--accent-violet` | `text-accent-violet`, `bg-accent-violet` | `#8B5CF6` | `#7C3AED` | Primary brand accent, primary CTA buttons |
+| `--accent-violet-glow`| `shadow-accent-violet` | `rgba(139, 92, 246, 0.25)` | `rgba(124, 58, 237, 0.2)` | Interactive button & node elevation glow |
+| `--accent-cyan` | `text-accent-cyan`, `bg-accent-cyan` | `#06B6D4` | `#0891B2` | Secondary accent, progress bars, active highlights |
+| `--state-success` | `text-state-success`, `bg-state-success` | `#10B981` | `#059669` | Passed exercises, foundational mastery, streak dots |
+| `--state-warning` | `text-state-warning`, `bg-state-warning` | `#F59E0B` | `#D97706` | Goal streaks, checkpoint quizzes |
+| `--state-error` | `text-state-error`, `bg-state-error` | `#EF4444` | `#DC2626` | Validation errors, failed checks |
+
+**Principle:** Colors serve functional roles. Every color in the system has a defined purpose. Decorative color without semantic meaning is avoided.
 
 ### Contrast Requirements
-- All text must meet WCAG 2.1 AA contrast ratios (4.5:1 for body text, 3:1 for large text and UI components).
-- Interactive elements must have a visible focus indicator with at least 3:1 contrast against adjacent colors.
+- All text meets WCAG 2.1 AA contrast ratios (4.5:1 for body text, 3:1 for large text and UI components).
+- Interactive elements feature a visible focus indicator ring (`focus-visible:ring-2 focus-visible:ring-accent-violet`).
 
 ---
 
@@ -216,20 +222,16 @@ Animation serves **function**, not decoration. Every animation must answer: "Wha
 
 ## Skill-Map Interaction Principles
 
-The skill map is an interactive visualization showing skill relationships, prerequisites and learner progress.
+The skill map is an interactive visualization showing cross-disciplinary skill relationships, prerequisites, and learner progression.
 
-### Design Direction
-- **Node-link diagram** showing skills as nodes and prerequisites as directed edges.
-- **Zoom and pan** for exploring large skill trees.
-- **Visual encoding of mastery:** Node fill, ring or glow indicates mastery level (0–100%).
-- **Interactive nodes:** Clicking a skill node shows associated courses and current mastery.
-- **Clear prerequisite paths:** Edges show which skills must be learned before others unlock.
-- **Responsive:** On mobile, the skill map may simplify to a list or tree view.
-
-### Implementation Direction
-- SVG-based rendering for crisp scaling and accessibility.
-- Lightweight layout algorithm (dagre, d3-hierarchy, or similar) — avoid heavy 3D libraries.
-- Canvas fallback only if SVG performance is insufficient for large graphs.
+### Implemented Architecture (Phase 1)
+- **Deterministic Multi-Track Swimlanes:** In "All Disciplines" mode, skills are separated into 4 distinct horizontal swimlanes (Programming & Web, Spoken Communication, Productivity & Systems, Design & Visual Hierarchy). Each lane features subtle category badges and dashed dividers, preventing cross-discipline node collisions.
+- **Directional Cubic Bezier Connections:** Directed prerequisite-to-unlock edges are rendered via SVG paths with smooth S-curves (`M x1 y1 C ...`) and directional arrowhead markers (`#arrow-default`, `#arrow-unlocks`, `#arrow-prereq`) terminating at card borders.
+- **Dynamic Interaction Highlighting:** Selecting any node highlights outgoing unlocks in violet (`#8B5CF6`) and incoming prerequisites in cyan (`#06B6D4`), elevating active elements to `z-20`.
+- **Responsive Layout:** The graph maintains minimum readable dimensions (`min-w-[720px]`) within an `overflow-x-auto` wrapper on mobile viewports (with a swipe hint), avoiding crushed cards.
+- **Accessible Structured Tree Alternative:** A toggle switcher allows learners and assistive technology users to switch from the visual graph to an accessible, semantically structured category card list with full prerequisite trees and keyboard accessibility.
+- **Visual Encoding of Mastery:** Node cards display level dots (green for Foundational, cyan for Intermediate, violet for Advanced), full wrapped titles (`line-clamp-2`), and labeled demonstration mastery scores.
+- **Discipline Filter Isolation:** Filtering by discipline recalculates layout coordinates to center the selected track with generous vertical breathing room, cleanly isolating relevant nodes and connection paths.
 
 ---
 
