@@ -90,5 +90,51 @@ def auth_tokens(client: TestClient, registered_user: dict) -> dict:
 
 @pytest.fixture
 def auth_headers(auth_tokens: dict) -> dict[str, str]:
-    """Return Authorization headers for authenticated requests."""
+    """Return Authorization headers for authenticated requests (default learner role)."""
     return {"Authorization": f"Bearer {auth_tokens['access_token']}"}
+
+
+@pytest.fixture
+def creator_headers(client: TestClient, db: Session) -> dict[str, str]:
+    """Provide authentication headers for a user with CREATOR role."""
+    from app.modules.auth.models import User, UserRole
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "creator@example.com",
+            "password": "SecureP@ss1",
+            "display_name": "Creator User",
+        },
+    )
+    user = db.query(User).filter(User.email == "creator@example.com").first()
+    user.role = UserRole.CREATOR
+    db.commit()
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "creator@example.com", "password": "SecureP@ss1"},
+    )
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+@pytest.fixture
+def admin_headers(client: TestClient, db: Session) -> dict[str, str]:
+    """Provide authentication headers for a user with ADMIN role."""
+    from app.modules.auth.models import User, UserRole
+
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "admin@example.com",
+            "password": "SecureP@ss1",
+            "display_name": "Admin User",
+        },
+    )
+    user = db.query(User).filter(User.email == "admin@example.com").first()
+    user.role = UserRole.ADMIN
+    db.commit()
+    res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@example.com", "password": "SecureP@ss1"},
+    )
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}

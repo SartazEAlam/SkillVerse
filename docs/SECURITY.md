@@ -218,16 +218,28 @@ Limits are configurable per user role. Admin can override for specific users.
 
 ---
 
-## Untrusted Content Handling
+## Untrusted Content Handling & Media Security (Phase 3 Implemented)
 
-### User-Generated Content
-- **Lesson text (creator-authored):** Sanitized HTML with allowlisted tags. No scripts, iframes or external resources.
-- **Learner bios and comments:** Plain text or limited markdown. No HTML.
-- **Code in submissions:** Stored as plain text. Never rendered as executable HTML in the platform UI. Displayed in syntax-highlighted code blocks.
+### Content Sanitization & Data Safety
+- **Structured Block Data Model:** Lessons are never stored as arbitrary HTML blobs or executable code. Lessons consist of strictly typed Pydantic models (`HeadingBlockData`, `TextBlockData`, `ListBlockData`, `CodeExampleBlockData`, `CalloutBlockData`, `ImageBlockData`, `VideoBlockData`).
+- **Rich-Text Sanitization (`sanitize_text`):** All markdown and text bodies pass through a server-side sanitizer that explicitly removes `<script>`, `<iframe>`, `<object>`, `<embed>`, inline event handlers (`onload`, `onclick`, `onerror`), and dangerous markup before persistence.
+- **URI Scheme Restrictions (`validate_url`):** URLs for images, resources, and video streams must use `http` or `https`. `javascript:` URIs are strictly prohibited and immediately raise a validation error.
+- **Video Embed Allowlist:** To prevent malicious iframes and remote content injection, video embed URLs are restricted to verified providers:
+  - `youtube.com`, `www.youtube.com`, `youtu.be`
+  - `vimeo.com`, `player.vimeo.com`
+  - `assets.skillverse.dev` (official CDN)
+  - `localhost`, `127.0.0.1` (development environments)
+  Unrecognized streaming domains are rejected at API submission time.
+- **Accessibility Enforcements:** Image blocks require descriptive `alt_text` (minimum 3 characters) to ensure compliance with WCAG screen reader accessibility standards.
+
+### Authoring & Versioning Authorization
+- **Role Requirements:** Taxonomy writes (disciplines, skills, prerequisites) and course authoring require authenticated sessions with `CREATOR` or `ADMIN` roles. Anonymous users are rejected with `401 Unauthorized`; learners are rejected with `403 Forbidden`.
+- **Ownership Verification:** A creator can only edit drafts of courses they created (`course.creator_id == current_user.id`). Cross-author tampering is rejected with `403 Forbidden`. Admins possess platform-wide administrative override.
+- **Published Version Immutability:** When a course version is published, its database record is stamped with `published_at` and `publisher_id`. Any subsequent write attempt directly targeting that version or its child modules/lessons/blocks raises a `409 Conflict` (`VERSION_IMMUTABLE`). Future curriculum updates must be performed against an isolated cloned draft (`version_number = 0`).
 
 ### Rendering Safety
-- React's JSX escaping prevents XSS in most contexts.
-- `dangerouslySetInnerHTML` used **only** for sanitized lesson content, with DOMPurify or similar.
+- React's JSX escaping prevents XSS across UI presentation surfaces.
+- Lesson blocks are delivered as structured data to be parsed by dedicated UI components, never passed directly to `dangerouslySetInnerHTML`.
 - CSP (Content Security Policy) headers restrict script sources, inline scripts and external resources.
 - CORS configured to allow only the SkillVerse frontend origin.
 

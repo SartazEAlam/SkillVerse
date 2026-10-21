@@ -28,7 +28,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown events."""
     logger.info("SkillVerse API starting up (env=%s)", settings.environment)
     if settings.is_development and settings.database_url.startswith("sqlite"):
-        import app.modules.auth.models  # noqa: F401
+        import app.modules.auth.models
+        import app.modules.courses.models
+        import app.modules.skills.models  # noqa: F401
         from app.infrastructure.database import Base, engine
 
         Base.metadata.create_all(bind=engine)
@@ -125,7 +127,6 @@ def create_app() -> FastAPI:
             },
         )
 
-
     # ── Root & Health check ──────────────────────────
     @app.get("/", include_in_schema=False)
     def root() -> dict[str, Any]:
@@ -146,7 +147,7 @@ def create_app() -> FastAPI:
 
         services: dict[str, str] = {
             "database": "connected" if db_ok else "disconnected",
-            "redis": "not_configured",   # Redis check will be added when integrated
+            "redis": "not_configured",  # Redis check will be added when integrated
             "storage": "not_configured",  # Object storage check will be added when integrated
         }
 
@@ -164,10 +165,14 @@ def create_app() -> FastAPI:
 
     # ── Register routers ─────────────────────────────
     from app.modules.auth.router import router as auth_router
+    from app.modules.courses.router import router as courses_router
+    from app.modules.skills.router import router as skills_router
     from app.modules.users.router import router as users_router
 
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
+    app.include_router(skills_router, prefix="/api/v1")
+    app.include_router(courses_router, prefix="/api/v1")
 
     return app
 

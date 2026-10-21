@@ -144,6 +144,31 @@ Each module has a clear responsibility and communicates with other modules throu
 
 **Rule:** Modules import only from `infrastructure/` and other modules' service interfaces. Direct cross-module model access is prohibited.
 
+### Phase 3 Domain Architecture (Skills, Content & Versioning)
+
+#### 1. Skill Taxonomy & Prerequisite Directed Acyclic Graph (DAG)
+- **Disciplines:** High-level domains (`Technology`, `Communication`, `Personal Productivity`, etc.) organizing skills and courses without requiring discipline-specific database tables.
+- **Skills:** Concrete abilities classified by proficiency depth (`FOUNDATIONAL`, `INTERMEDIATE`, `ADVANCED`). Hierarchical categorization is supported via `parent_skill_id`.
+- **Prerequisite Dependencies:** Modeled as directed graph edges (`skill_id` requires `prerequisite_skill_id`).
+  - Database check constraint `CHECK (skill_id != prerequisite_skill_id)` forbids self-dependencies.
+  - Service-level cycle detection executes a breadth-first search (BFS) traversing prerequisite links before insert. If a path from the proposed prerequisite to the dependent skill already exists, the dependency is rejected with a `400 Circular dependency detected` error.
+  - Active graph serialization via `GET /api/v1/skills/taxonomy/map` provides node and edge geometry for graph visualizers.
+
+#### 2. Course Aggregate Root & Immutable Version Snapshots
+- **Aggregate Root (`Course`):** Stable entity with unique slug, title, primary discipline, difficulty level, and creator ownership. Points to `current_version_id`.
+- **Working Draft Copy (`CourseVersion` with `version_number = 0` / `published_at IS NULL`):** Mutable working tree where creators add and reorder modules, lessons, and content blocks.
+- **Transactional Publication (`publish_course`):**
+  1. Validates entire curriculum (at least 1 module, every module has lessons, every lesson has valid blocks).
+  2. Allocates sequential version number (`v1`, `v2`, ...).
+  3. Records publication timestamp and publisher ID.
+  4. Deactivates previous versions (`is_active = false`) and points `Course.current_version_id` to the newly published version within a single database transaction.
+- **Published Version Immutability:** Once `published_at` is stamped, that `CourseVersion` and all child `Module`, `Lesson`, and `LessonBlock` records become permanently immutable. Modifying a published course creates or opens an isolated working draft (cloning modules, lessons, and blocks), ensuring earlier published versions are never altered.
+
+#### 3. Structured Lesson Content Model
+- Lessons contain an ordered sequence of typed blocks (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`).
+- Content is stored as validated data interpreted by the client renderer (never raw executable JavaScript or unchecked HTML).
+- Rich-text markdown is sanitized with script stripping; video embeds are restricted to whitelisted streaming providers.
+
 ---
 
 ## Data Flow

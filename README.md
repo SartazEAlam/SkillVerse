@@ -9,15 +9,17 @@ SkillVerse is an immersive learning platform that helps people acquire usable sk
 - **Phase 1 — Immersive Design System & Frontend Shell** (completed)
   The frontend application shell is implemented with a dark-first design system, responsive navigation, and four main interactive routes (Dashboard, Course Catalog Explore, Interactive Skill Map, and Course Overview with interactive preview).
 - **Phase 2 — Backend Foundation, Database Infrastructure & Identity** (completed)
-  FastAPI application foundation with SQLAlchemy models, Alembic migrations, Argon2id password hashing, JWT access + refresh token rotation, Google OAuth 2.0 PKCE, rate limiting, and profile management (GDPR export, soft delete). Includes frontend auth integration (Login, Register, Profile, AuthContext). *Note: Local automated tests run against SQLite; live PostgreSQL 16 integration is unverified locally due to local Docker daemon unavailability and must be verified in CI/CD.*
+  FastAPI application foundation with SQLAlchemy models, Alembic migrations, Argon2id password hashing, JWT access + refresh token rotation, Google OAuth 2.0 PKCE, rate limiting, and profile management (GDPR export, soft delete). Includes frontend auth integration (Login, Register, Profile, AuthContext).
+- **Phase 3 — Cross-Disciplinary Skill Taxonomy, Course Catalog & Versioned Content Model** (completed)
+  Domain model and APIs for cross-disciplinary skills, cycle-safe prerequisite DAG, courses, modules, lessons, structured content blocks, and immutable published course versions. Public catalog discovery with filtering (discipline, difficulty), search, and deterministic pagination. Includes idempotent seed script populating 7 disciplines, 15 skills, 12 prerequisite edges, and 3 full representative courses (Web Dev, Spoken English, Personal Productivity) published through the standard versioning service. *Note: 72 automated tests run against SQLite test harness; live PostgreSQL 16 integration remains unverified locally due to local Docker daemon unavailability and must be verified in CI/CD.*
 
 ## Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
-| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phase 1 & 2) |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phase 2) |
-| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured |
+| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phase 1, 2 & 3 contracts) |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phase 2 & 3) |
+| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated |
 | Cache / Jobs | Redis 7 (Phase 2 docker-compose ready, Phase 4+ feature use) | Configured |
 | Code Execution | Isolated sandbox (Docker-based) | Planned (Phase 5) |
 | AI | Provider-neutral integration layer | Planned (Phase 8) |
@@ -98,14 +100,20 @@ pip install -e ".[dev]"
 # Run code style and lint checks with Ruff
 ruff check .
 
-# Run all automated tests (executes 46 tests against SQLite test database)
+# Verify database migrations are aligned with models
+python -m alembic check
+
+# Seed initial cross-disciplinary taxonomy and representative courses
+python -m app.seed
+
+# Run all automated tests (executes 68 tests against SQLite test database)
 pytest
 
 # Start local development server
 uvicorn app.main:app --reload --port 8000
 ```
 
-*Database Note:* Automated tests use an isolated SQLite test database (`sqlite:///./test.db`). Production environments strictly require PostgreSQL (`DATABASE_URL`), enforced via configuration validator. Docker Compose (`docker-compose up`) starts PostgreSQL 16 and Redis 7.
+*Database Note:* Automated tests use an isolated SQLite test database (`sqlite:///./test.db`). Production environments strictly require PostgreSQL (`DATABASE_URL`), enforced via configuration validator. Docker Compose (`docker-compose up`) starts PostgreSQL 16 and Redis 7. *Note: Live PostgreSQL 16 integration is unverified locally due to local Docker daemon unavailability and must be verified in CI/CD.*
 
 ### Frontend Setup & Development
 

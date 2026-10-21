@@ -243,27 +243,393 @@ Request user account deletion (initiates soft-delete with 30-day recovery grace 
 
 ---
 
-## Skill & Course Discovery
+## Disciplines & Skill Taxonomy (Phase 3 Implemented)
+
+### `GET /api/v1/disciplines` 🌐
+List all active disciplines ordered by presentation sort order.
+```json
+// Response 200 OK
+[
+  {
+    "id": "uuid",
+    "slug": "technology",
+    "name": "Technology",
+    "description": "Software engineering, computer systems, and digital tooling.",
+    "icon": "code",
+    "sort_order": 1,
+    "is_active": true,
+    "created_at": "2026-10-21T18:00:00Z",
+    "skills_count": 5
+  }
+]
+```
+
+### `GET /api/v1/disciplines/{slug}` 🌐
+Retrieve discipline details by slug with all active contained skills.
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "slug": "technology",
+  "name": "Technology",
+  "description": "...",
+  "icon": "code",
+  "sort_order": 1,
+  "is_active": true,
+  "created_at": "2026-10-21T18:00:00Z",
+  "skills_count": 5,
+  "skills": [
+    {
+      "id": "uuid",
+      "slug": "web-principles",
+      "name": "How the Web Works",
+      "difficulty_level": "FOUNDATIONAL",
+      "icon": null,
+      "sort_order": 1
+    }
+  ]
+}
+```
+
+### `POST /api/v1/disciplines` 🔓🛡️
+Create a new discipline (admin privilege required).
+```json
+// Request
+{
+  "slug": "technology",
+  "name": "Technology",
+  "description": "Optional description",
+  "icon": "code",
+  "sort_order": 1
+}
+// Response 201 Created
+{ "id": "uuid", "slug": "technology", "name": "Technology", "skills_count": 0, ... }
+```
 
 ### `GET /api/v1/skills` 🌐
-List all skills, optionally filtered by category.
+List active skills with optional filtering by discipline, difficulty level, or search term.
+- Query parameters:
+  - `discipline`: Filter by discipline slug (e.g. `?discipline=technology`)
+  - `difficulty`: Filter by `FOUNDATIONAL`, `INTERMEDIATE`, or `ADVANCED`
+  - `search`: Search query matching name, slug, or description
+```json
+// Response 200 OK
+[
+  {
+    "id": "uuid",
+    "slug": "html-semantics",
+    "name": "HTML Structure & Semantics",
+    "description": "...",
+    "discipline_id": "uuid",
+    "discipline_slug": "technology",
+    "discipline_name": "Technology",
+    "parent_skill_id": null,
+    "difficulty_level": "FOUNDATIONAL",
+    "icon": null,
+    "sort_order": 2,
+    "is_active": true,
+    "created_at": "2026-10-21T18:00:00Z"
+  }
+]
 ```
-?category=programming&search=javascript
-```
-Response includes prerequisite relationships for skill-map rendering.
 
-### `GET /api/v1/skills/{skill_id}` 🌐
-Skill detail with prerequisite tree and associated courses.
+### `GET /api/v1/skills/{slug}` 🌐
+Retrieve full skill detail including direct prerequisite skills and unlocked dependent skills.
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "slug": "css-layouts",
+  "name": "CSS & Responsive Layouts",
+  "description": "Flexbox, CSS Grid, media queries.",
+  "discipline_id": "uuid",
+  "discipline_slug": "technology",
+  "discipline_name": "Technology",
+  "difficulty_level": "INTERMEDIATE",
+  "prerequisites": [
+    { "id": "uuid", "slug": "html-semantics", "name": "HTML Structure & Semantics", "difficulty_level": "FOUNDATIONAL" }
+  ],
+  "unlocked_skills": [],
+  "courses_count": 1
+}
+```
+
+### `GET /api/v1/skills/taxonomy/map` 🌐
+Retrieve full active graph structure (nodes, edges, disciplines) for the interactive Skill Map visualizer.
+```json
+// Response 200 OK
+{
+  "nodes": [
+    {
+      "id": "uuid",
+      "slug": "web-principles",
+      "name": "How the Web Works",
+      "discipline_slug": "technology",
+      "difficulty_level": "FOUNDATIONAL",
+      "description": "...",
+      "icon": null
+    }
+  ],
+  "edges": [
+    { "source": "uuid-prerequisite-skill", "target": "uuid-dependent-skill" }
+  ],
+  "disciplines": [ ... ]
+}
+```
+
+### `POST /api/v1/skills` 🔓🛡️
+Create a new skill (creator or admin required).
+```json
+// Request
+{
+  "slug": "docker-containers",
+  "name": "Docker & Containerization",
+  "discipline_id": "uuid",
+  "difficulty_level": "INTERMEDIATE",
+  "description": "Container architecture and multi-stage builds."
+}
+```
+
+### `PATCH /api/v1/skills/{skill_id}` 🔓🛡️
+Update skill properties (creator or admin required).
+
+### `POST /api/v1/skills/{skill_id}/prerequisites` 🔓🛡️
+Establish a directed prerequisite dependency (`skill_id` requires `prerequisite_skill_id`).
+- Validations:
+  - Cannot depend on self (400)
+  - Prerequisite must exist (404)
+  - No duplicate relationship (409)
+  - Rejects circular dependency cycles via BFS cycle detection (400 `CIRCULAR_DEPENDENCY`)
+```json
+// Request
+{ "prerequisite_skill_id": "uuid-prerequisite" }
+// Response 201 Created
+{ "skill_id": "uuid", "prerequisite_skill_id": "uuid-prerequisite", "created_at": "..." }
+```
+
+### `DELETE /api/v1/skills/{skill_id}/prerequisites/{prerequisite_id}` 🔓🛡️
+Remove a directed prerequisite relationship (creator or admin required). Returns 204 No Content.
+
+---
+
+## Course Catalog (Public Discovery) (Phase 3 Implemented)
 
 ### `GET /api/v1/courses` 🌐
-Browse published courses.
-```
-?skill_id=uuid&search=web+development&sort=popular&page=1&page_size=20
+Search and filter published courses in the public catalog.
+- Strictly excludes drafts (`status == 'DRAFT'`), unapproved, and archived (`status == 'ARCHIVED'`) courses.
+- Only courses with `status == 'PUBLISHED'` and an active published version snapshot (`is_active == true`) are returned.
+- Query parameters:
+  - `discipline`: Filter by discipline slug (e.g. `?discipline=technology`)
+  - `difficulty`: Filter by `BEGINNER`, `INTERMEDIATE`, or `ADVANCED`
+  - `search`: Search query across title, slug, and short_description
+  - `page`: Page number (default: 1, min: 1)
+  - `limit`: Items per page (default: 10, max: 50)
+```json
+// Response 200 OK
+{
+  "items": [
+    {
+      "id": "uuid",
+      "slug": "web-development-foundations",
+      "title": "Web Development Foundations",
+      "short_description": "Master the architectural building blocks of modern web engineering.",
+      "discipline_id": "uuid",
+      "discipline_slug": "technology",
+      "discipline_name": "Technology",
+      "difficulty_level": "BEGINNER",
+      "estimated_duration_minutes": 360,
+      "cover_image_url": null,
+      "status": "PUBLISHED",
+      "version_number": 1,
+      "skills": [
+        { "id": "uuid", "slug": "html-semantics", "name": "HTML Structure & Semantics", "difficulty_level": "FOUNDATIONAL" }
+      ]
+    }
+  ],
+  "total": 3,
+  "page": 1,
+  "limit": 10,
+  "pages": 1
+}
 ```
 
-### `GET /api/v1/courses/{course_slug}` 🌐
-Course detail: description, skill, modules overview, estimated time, prerequisites.
-- Does **not** include full lesson content (requires enrollment).
+### `GET /api/v1/courses/{slug}` 🌐
+Retrieve full curriculum (modules, lesson outlines, learning objectives) from the **current published version**.
+- Returns 404 for draft or archived courses.
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "slug": "web-development-foundations",
+  "title": "Web Development Foundations",
+  "short_description": "...",
+  "full_description": "...",
+  "discipline_id": "uuid",
+  "discipline_slug": "technology",
+  "discipline_name": "Technology",
+  "difficulty_level": "BEGINNER",
+  "estimated_duration_minutes": 360,
+  "status": "PUBLISHED",
+  "version_number": 1,
+  "published_at": "2026-10-21T18:00:00Z",
+  "learning_objectives": [
+    "Explain the client-server request-response lifecycle and DNS resolution."
+  ],
+  "skills": [ ... ],
+  "modules": [
+    {
+      "id": "uuid",
+      "title": "How the Web Works",
+      "description": "Protocols, browsers, IP addressing, DNS resolution.",
+      "sort_order": 1,
+      "lessons": [
+        {
+          "id": "uuid",
+          "slug": "web-architecture",
+          "title": "Clients, Servers, and HTTP Requests",
+          "description": "Understanding URLs, HTTP methods, headers.",
+          "learning_objectives": [ ... ],
+          "estimated_minutes": 30,
+          "sort_order": 1,
+          "content_version": 1,
+          "blocks": [ ... ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `GET /api/v1/courses/{course_slug}/lessons/{lesson_slug}` 🌐
+Retrieve individual lesson details and structured content blocks from the active published version.
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "slug": "web-architecture",
+  "title": "Clients, Servers, and HTTP Requests",
+  "description": "...",
+  "learning_objectives": [ ... ],
+  "estimated_minutes": 30,
+  "sort_order": 1,
+  "content_version": 1,
+  "blocks": [
+    {
+      "id": "uuid",
+      "block_type": "heading",
+      "content": { "level": 2, "text": "Clients, Servers, and HTTP Requests" },
+      "sort_order": 1
+    },
+    {
+      "id": "uuid",
+      "block_type": "text",
+      "content": { "format": "markdown", "text": "In this lesson..." },
+      "sort_order": 2
+    },
+    {
+      "id": "uuid",
+      "block_type": "callout",
+      "content": { "variant": "key_concept", "title": "Core Principle", "text": "..." },
+      "sort_order": 3
+    }
+  ]
+}
+```
+
+---
+
+## Course Authoring & Version Publishing (Phase 3 Implemented)
+
+### `POST /api/v1/courses` 🔓🛡️
+Create a new course aggregate and its initial working draft (version 0). Creator or admin privilege required.
+```json
+// Request
+{
+  "slug": "cloud-architecture",
+  "title": "Cloud Architecture Systems",
+  "short_description": "Scalable cloud patterns on modern infrastructure.",
+  "full_description": "Comprehensive guide to distributed systems.",
+  "discipline_id": "uuid",
+  "difficulty_level": "INTERMEDIATE",
+  "estimated_duration_minutes": 300,
+  "learning_objectives": ["Design multi-region systems"],
+  "skill_ids": ["uuid-skill-1"]
+}
+```
+
+### `GET /api/v1/courses/{course_id}/draft` 🔓🛡️
+Retrieve the current working draft. If the course is published and has no open draft, this clones the published snapshot into a new working draft. Only the owner or admin can view drafts.
+
+### `PATCH /api/v1/courses/{course_id}` 🔓🛡️
+Update course aggregate metadata and draft objectives.
+
+### `POST /api/v1/courses/{course_id}/draft/modules` 🔓🛡️
+Add a module to the working draft.
+```json
+// Request
+{ "title": "Module 1: Foundations", "description": "Intro", "sort_order": 1 }
+```
+
+### `PATCH /api/v1/courses/{course_id}/draft/modules/{module_id}` 🔓🛡️
+Update draft module metadata.
+
+### `DELETE /api/v1/courses/{course_id}/draft/modules/{module_id}` 🔓🛡️
+Delete a module and its lessons from the working draft.
+
+### `POST /api/v1/courses/{course_id}/draft/modules/{module_id}/lessons` 🔓🛡️
+Add a lesson unit to a draft module.
+```json
+// Request
+{ "slug": "lesson-1", "title": "Lesson 1", "estimated_minutes": 20, "sort_order": 1 }
+```
+
+### `PATCH /api/v1/courses/{course_id}/draft/lessons/{lesson_id}` 🔓🛡️
+Update lesson outline metadata.
+
+### `PUT /api/v1/courses/{course_id}/draft/lessons/{lesson_id}/content` 🔓🛡️
+Atomically replace content blocks for a draft lesson with a validated `LessonContentDocument`.
+- Validates block schemas, rich-text tags, and media host allowlists.
+```json
+// Request
+{
+  "document": {
+    "schema_version": "1.0",
+    "learning_objectives": ["Understand DNS"],
+    "blocks": [
+      { "id": "b1", "type": "heading", "data": { "level": 2, "text": "DNS Resolution" } },
+      { "id": "b2", "type": "text", "data": { "format": "markdown", "text": "How recursive resolvers work." } },
+      { "id": "b3", "type": "callout", "data": { "variant": "key_concept", "title": "TTL", "text": "Time-to-live controls caching." } }
+    ]
+  }
+}
+```
+
+### `POST /api/v1/courses/{course_id}/publish` 🔓🛡️
+Atomically snapshot and publish the working draft into an immutable published version.
+- Enforces validations: at least 1 module, every module has at least 1 lesson, every lesson has at least 1 validated content block, non-empty learning objectives.
+- Allocates next version number transactionally (v1, v2, ...).
+- Stamps `published_at`, `publisher_id`, `changelog`.
+- Sets `is_active = true` and updates `course.current_version_id`.
+- Deactivates previous versions while preserving their historical snapshots intact.
+```json
+// Request
+{ "changelog": "Initial course release v1.0" }
+// Response 200 OK
+{
+  "course_id": "uuid",
+  "version_id": "uuid",
+  "version_number": 1,
+  "published_at": "2026-10-21T18:00:00Z",
+  "publisher_id": "uuid",
+  "changelog": "Initial course release v1.0"
+}
+```
+
+### `POST /api/v1/courses/{course_id}/unpublish` 🔓🛡️
+Transition course status to `DRAFT`, immediately removing it from public catalog discovery while keeping all historical published versions in the database.
+
+### `POST /api/v1/courses/{course_id}/archive` 🔓🛡️
+Transition course status to `ARCHIVED`, removing it from discovery and preventing edits.
 
 ---
 

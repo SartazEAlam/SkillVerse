@@ -14,6 +14,15 @@ from app.infrastructure.database import Base
 
 # Import all models so Alembic can detect them
 from app.modules.auth.models import OAuthAccount, RefreshToken, User, UserProfile  # noqa: F401
+from app.modules.courses.models import (  # noqa: F401
+    Course,
+    CourseSkill,
+    CourseVersion,
+    Lesson,
+    LessonBlock,
+    Module,
+)
+from app.modules.skills.models import Discipline, Skill, SkillPrerequisite  # noqa: F401
 
 config = context.config
 

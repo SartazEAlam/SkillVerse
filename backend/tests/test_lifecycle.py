@@ -42,7 +42,7 @@ class TestDatabaseMigrations:
 
         heads = script.get_heads()
         assert len(heads) == 1
-        assert heads[0] == "001_initial_identity"
+        assert heads[0] == "002_skill_taxonomy_and_courses"
 
 
 class TestProductionEnvironmentInvariants:

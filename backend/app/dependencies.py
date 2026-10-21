@@ -57,3 +57,29 @@ def get_current_user(
         )
 
     return user
+
+
+def require_creator_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Enforce that the authenticated user has creator or admin privileges."""
+    from app.modules.auth.models import UserRole
+
+    if current_user.role not in (UserRole.CREATOR, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {"code": "FORBIDDEN", "message": "Creator or Admin privileges required."}
+            },
+        )
+    return current_user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Enforce that the authenticated user has admin privileges."""
+    from app.modules.auth.models import UserRole
+
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": {"code": "FORBIDDEN", "message": "Admin privileges required."}},
+        )
+    return current_user

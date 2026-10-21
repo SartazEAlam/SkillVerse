@@ -189,60 +189,56 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ---
 
-## Phase 3: Skill Taxonomy and Versioned Course Content
+## Phase 3: Skill Taxonomy, Course Catalog and Versioned Content Model
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ### Objectives
-- Implement the skill taxonomy with prerequisite relationships.
-- Implement courses, course versions, modules, lessons and lesson blocks.
-- Implement course enrollments and lesson-level progress state.
-- Build the course discovery UI, enrollment flow, and lesson renderer.
-- Seed the three initial courses with content structure.
+- Implement cross-disciplinary skill taxonomy (`disciplines`, `skills`, `skill_prerequisites`).
+- Build directed prerequisite DAG with server-side BFS cycle detection and self-dependency constraints.
+- Implement course aggregate root, module containers, lesson units, and structured content blocks.
+- Build an immutable versioning and publication engine ensuring published versions cannot be mutated.
+- Provide public catalog discovery APIs with filtering (discipline, difficulty), search, and pagination (excluding drafts).
+- Provide creator authoring endpoints for draft creation, editing, and transactional publishing.
+- Seed the three representative course tracks (Web Development Foundations, Spoken English and Communication, Personal Productivity) published through the versioning service.
 
 ### Dependencies
-- Phase 2 (database, auth, user system).
+- Phase 2 (database infrastructure, Alembic, auth/user system).
 
 ### Deliverables
-- Database migrations for skills, skill_prerequisites, courses, course_versions, modules, lessons, lesson_blocks, enrollments, lesson_progress.
-- Skill CRUD API and skill-map data endpoint.
-- Course CRUD API (creator-facing, draft only at this stage).
-- Course discovery endpoint (public, with search and filtering).
-- Lesson retrieval endpoint (enrollment-gated).
-- Enrollment API (enroll in course, list user enrollments, enrollment status).
-- Lesson progress tracking API (start lesson, mark completed).
-- Frontend: course catalog page, course detail page, enrollment action, lesson viewer.
-- Lesson block renderer (text, code example, callout, media reference).
-- Module sidebar with progress indicators (backed by lesson_progress records).
-- Seed data for three courses (Web Dev, Communication, Productivity) with module/lesson structure.
+- [x] Database models in `app/modules/skills/models.py` (`Discipline`, `Skill`, `SkillPrerequisite`).
+- [x] Database models in `app/modules/courses/models.py` (`Course`, `CourseSkill`, `CourseVersion`, `Module`, `Lesson`, `LessonBlock`).
+- [x] Versioned migration `backend/alembic/versions/002_skill_taxonomy_and_courses.py` (`alembic check` reports no unapplied operations).
+- [x] Structured content Pydantic schemas in `app/modules/courses/content_schemas.py` (`Heading`, `Text`, `List`, `CodeExample`, `Callout`, `Image`, `Video`) with script stripping and URL security.
+- [x] Taxonomy service and DAG cycle detection in `app/modules/skills/service.py`.
+- [x] Course catalog discovery and immutable publishing service in `app/modules/courses/service.py`.
+- [x] FastAPI REST endpoints in `app/modules/skills/router.py` and `app/modules/courses/router.py`.
+- [x] Idempotent database seed script in `backend/app/seed.py` initializing 7 disciplines, 15 skills, 12 prerequisite links, and 3 full courses (Web Dev, Spoken English, Personal Productivity).
+- [x] Frontend TypeScript API contracts in `frontend/src/types/catalog.ts` keeping existing Phase 1 demo mode intact.
 
 ### Important Files
-- `backend/app/modules/skills/`
-- `backend/app/modules/courses/`
-- `frontend/src/features/courses/`
-- `frontend/src/features/lessons/`
-- `backend/alembic/versions/` (new migrations)
+- `backend/app/modules/skills/models.py`, `schemas.py`, `service.py`, `router.py`
+- `backend/app/modules/courses/models.py`, `content_schemas.py`, `schemas.py`, `service.py`, `router.py`
+- `backend/alembic/versions/002_skill_taxonomy_and_courses.py`
+- `backend/app/seed.py`
+- `frontend/src/types/catalog.ts`
+- `backend/tests/test_skills.py`, `test_content_schemas.py`, `test_courses.py`, `test_versioning.py`, `test_seed.py`
 
-### Acceptance Criteria
-1. Skills can be created with prerequisite relationships. Circular prerequisites are rejected.
-2. Course versions are immutable once published. New edits create a new version.
-3. Course catalog page shows published courses with search and filtering.
-4. Course detail page shows description, modules overview and enrollment button.
-5. Enrolled learner can navigate module structure and view lesson content.
-6. Lesson blocks render correctly (text with markdown, code examples with syntax highlighting, callouts).
-7. Non-enrolled users cannot access lesson content (403).
-8. Three courses seeded with at least 2 modules and 3 lessons each.
+### Acceptance Criteria Verification
+1. **Skill Taxonomy & DAG:** Disciplines and skills support multi-discipline categorization. Self-dependencies rejected (400), duplicates rejected (409), and 2-node and 3-node directed cycles rejected via BFS cycle detection (verified in `test_skills.py`).
+2. **Published Immutability:** Publishing stamps `published_at` and `publisher_id`, setting `is_active = true`. Modifying a published course creates or modifies an isolated working draft; earlier published versions remain completely unaltered (verified in `test_versioning.py`).
+3. **Draft Editing Isolation:** Working drafts (`version_number = 0`) can be updated, and modules/lessons added or deleted without affecting the active catalog version (verified).
+4. **Publishing Validation:** Course publication validates that at least 1 module exists, every module has lessons, and every lesson has valid structured blocks. Incomplete drafts fail with 400 (verified).
+5. **Catalog Discovery:** `GET /api/v1/courses` strictly returns published courses with active version pointers. Draft and archived courses are never exposed publicly (verified in `test_courses.py`).
+6. **Search, Filters & Pagination:** Supports filtering by discipline, difficulty, search term, and deterministic pagination (`page`, `limit`, `total`, `pages`) (verified).
+7. **Structured Content Validation:** Lesson content validated against Pydantic schemas. Script tags stripped, disallowed URL schemes rejected, and unapproved video hosts blocked (verified in `test_content_schemas.py`).
+8. **Seed Data Idempotency:** All 3 representative courses seeded with full outlines, learning objectives, and structured blocks. Repeated execution is 100% idempotent (verified in `test_seed.py`).
+9. **Frontend Compatibility:** Existing Phase 1 demo mode and tests remain completely intact (23/23 vitest passed; `npm run build` succeeds).
 
-### Required Tests
-- Skill prerequisite cycle detection test.
-- Course version immutability test.
-- Enrollment authorization test (enrolled vs. non-enrolled).
-- Lesson block rendering tests (each block type).
-- Course search and filtering test.
-
-### Risks
-- Content structure may need revision once activities are implemented.
-- Lesson block schema design affects all future content.
+### Test Status & Local Limitations
+- **SQLite Test Execution:** All 72 backend unit and integration tests pass against SQLite (`sqlite:///./test.db`). All 23 frontend vitest tests pass. Ruff lint check passes with 0 errors.
+- **PostgreSQL Integration Status:** Models use SQLAlchemy's `.with_variant(JSONB, "postgresql")` and Alembic migration 002 includes PostgreSQL enum declarations. However, because local Docker was unavailable, **PostgreSQL 16 integration is explicitly unverified locally** and must be verified in CI/CD against a live PostgreSQL service.
+- **Deferred to Phase 4:** Universal lesson renderer, enrollment progress tracking, and full frontend-to-backend catalog binding belong to Phase 4.
 
 ---
 

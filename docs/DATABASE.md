@@ -93,94 +93,135 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 
 ### Skills and Taxonomy
 
+### Skills and Taxonomy (Phase 3 Implemented)
+
+#### `disciplines`
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| id | UUID (CHAR(36)) | PK | Unique discipline identifier |
+| slug | VARCHAR(100) | UNIQUE, NOT NULL, INDEX | Stable URL-friendly slug (e.g. 'technology', 'communication') |
+| name | VARCHAR(200) | NOT NULL | Human-readable discipline name |
+| description | TEXT | NULLABLE | Detailed description of the field |
+| icon | VARCHAR(100) | NULLABLE | Lucide icon identifier for UI navigation |
+| sort_order | INTEGER | NOT NULL, DEFAULT 0 | Display ordering |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Active / visibility toggle |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
 #### `skills`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Skill identifier |
-| slug | VARCHAR(100) | UNIQUE, NOT NULL | URL-friendly identifier |
-| name | VARCHAR(200) | NOT NULL | Human-readable name |
-| description | TEXT | NULLABLE | Skill description |
-| category | VARCHAR(100) | NOT NULL | Top-level category (e.g., 'programming', 'communication') |
-| icon | VARCHAR(100) | NULLABLE | Icon identifier for skill map |
-| sort_order | INTEGER | NOT NULL, DEFAULT 0 | Display ordering |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| id | UUID (CHAR(36)) | PK | Unique skill identifier |
+| slug | VARCHAR(100) | UNIQUE, NOT NULL, INDEX | Stable unique slug |
+| name | VARCHAR(200) | NOT NULL | Human-readable skill name |
+| description | TEXT | NULLABLE | Capability description |
+| discipline_id | UUID (CHAR(36)) | FK → disciplines.id, NOT NULL, ON DELETE RESTRICT | Owning discipline |
+| parent_skill_id | UUID (CHAR(36)) | FK → skills.id, NULLABLE, ON DELETE SET NULL | Optional hierarchical parent |
+| difficulty_level | ENUM('FOUNDATIONAL','INTERMEDIATE','ADVANCED') | NOT NULL, DEFAULT 'FOUNDATIONAL' | Target competency depth |
+| icon | VARCHAR(100) | NULLABLE | Icon identifier for Skill Map visualizer |
+| sort_order | INTEGER | NOT NULL, DEFAULT 0 | Presentation order |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Active / visibility toggle |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `skill_prerequisites`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| skill_id | UUID | FK → skills.id, NOT NULL | The skill that has a prerequisite |
-| prerequisite_skill_id | UUID | FK → skills.id, NOT NULL | The required skill |
+| skill_id | UUID (CHAR(36)) | FK → skills.id, NOT NULL, ON DELETE CASCADE | Dependent skill requiring prerequisite |
+| prerequisite_skill_id | UUID (CHAR(36)) | FK → skills.id, NOT NULL, ON DELETE CASCADE | Prerequisite skill required first |
 | | | PK(skill_id, prerequisite_skill_id) | Composite primary key |
-| | | CHECK(skill_id ≠ prerequisite_skill_id) | No self-reference |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Link timestamp |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+| | | CHECK(skill_id != prerequisite_skill_id) | Database check constraint preventing self-dependencies |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Relationship establishment timestamp |
+
+*Cycle Detection:* Enforced in service layer via breadth-first graph traversal preventing directed cycles prior to insert.
 
 ---
 
-### Courses and Content
+### Courses, Content, and Versioning (Phase 3 Implemented)
 
 #### `courses`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Course identifier |
-| slug | VARCHAR(200) | UNIQUE, NOT NULL | URL-friendly identifier |
+| id | UUID (CHAR(36)) | PK | Stable course aggregate root identifier |
+| slug | VARCHAR(200) | UNIQUE, NOT NULL, INDEX | Stable course catalog slug |
 | title | VARCHAR(300) | NOT NULL | Course title |
-| description | TEXT | NULLABLE | Short description |
-| cover_image_url | TEXT | NULLABLE | Cover image |
-| skill_id | UUID | FK → skills.id, NULLABLE | Primary skill taught |
-| creator_id | UUID | FK → users.id, NOT NULL | Course creator |
-| status | ENUM('draft','review','published','archived') | NOT NULL, DEFAULT 'draft' | Publication status |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| short_description | TEXT | NOT NULL | Brief catalog summary |
+| full_description | TEXT | NULLABLE | Detailed course description |
+| discipline_id | UUID (CHAR(36)) | FK → disciplines.id, NOT NULL, ON DELETE RESTRICT | Primary academic/vocational discipline |
+| difficulty_level | ENUM('BEGINNER','INTERMEDIATE','ADVANCED') | NOT NULL, DEFAULT 'BEGINNER' | Target learner experience |
+| estimated_duration_minutes | INTEGER | NULLABLE | Total estimated study duration in minutes |
+| cover_image_url | TEXT | NULLABLE | Optional cover illustration/banner |
+| status | ENUM('DRAFT','PUBLISHED','ARCHIVED') | NOT NULL, DEFAULT 'DRAFT', INDEX | Aggregate lifecycle state |
+| creator_id | UUID (CHAR(36)) | FK → users.id, NOT NULL, ON DELETE RESTRICT | Author / owner user ID |
+| current_version_id | UUID (CHAR(36)) | FK → course_versions.id, NULLABLE, ON DELETE SET NULL | Pointer to current active published version |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Aggregate creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
+#### `course_skills`
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| course_id | UUID (CHAR(36)) | FK → courses.id, NOT NULL, ON DELETE CASCADE | Parent course |
+| skill_id | UUID (CHAR(36)) | FK → skills.id, NOT NULL, ON DELETE CASCADE | Mapped skill taught |
+| is_primary | BOOLEAN | NOT NULL, DEFAULT false | Whether this is the primary skill taught |
+| | | PK(course_id, skill_id) | Composite primary key |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Association timestamp |
 
 #### `course_versions`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Version identifier |
-| course_id | UUID | FK → courses.id, NOT NULL | Parent course |
-| version_number | INTEGER | NOT NULL | Incrementing version |
-| published_at | TIMESTAMPTZ | NULLABLE | When this version went live |
-| changelog | TEXT | NULLABLE | Description of changes |
-| is_active | BOOLEAN | NOT NULL, DEFAULT false | Currently active version |
-| | | UNIQUE(course_id, version_number) | One version number per course |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| id | UUID (CHAR(36)) | PK | Version snapshot identifier |
+| course_id | UUID (CHAR(36)) | FK → courses.id, NOT NULL, ON DELETE CASCADE | Parent course aggregate |
+| version_number | INTEGER | NOT NULL | 0 for mutable draft; 1, 2, 3... for immutable published |
+| title | VARCHAR(300) | NOT NULL | Version-specific course title |
+| description | TEXT | NULLABLE | Version-specific description |
+| learning_objectives | JSON / JSONB | NOT NULL, DEFAULT '[]' | List of measurable learning outcomes |
+| published_at | TIMESTAMPTZ | NULLABLE | Timestamp when published (NULL = working draft) |
+| publisher_id | UUID (CHAR(36)) | FK → users.id, NULLABLE, ON DELETE SET NULL | User who published this version |
+| changelog | TEXT | NULLABLE | Release notes / changelog for this version |
+| is_active | BOOLEAN | NOT NULL, DEFAULT false | Whether this is the active published version |
+| | | UNIQUE(course_id, version_number) | Unique version numbers per course |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Version snapshot creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
+*Immutability Rule:* When `published_at` is set, the `CourseVersion` and all child `Module`, `Lesson`, and `LessonBlock` records become strictly immutable. Modifications are rejected with 409 Conflict. Further edits occur on an isolated cloned draft (`version_number = 0`).
 
 #### `modules`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Module identifier |
-| course_version_id | UUID | FK → course_versions.id, NOT NULL | Parent course version |
+| id | UUID (CHAR(36)) | PK | Module identifier |
+| course_version_id | UUID (CHAR(36)) | FK → course_versions.id, NOT NULL, ON DELETE CASCADE | Parent course version snapshot |
 | title | VARCHAR(300) | NOT NULL | Module title |
 | description | TEXT | NULLABLE | Module description |
-| sort_order | INTEGER | NOT NULL | Order within course |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| sort_order | INTEGER | NOT NULL | Deterministic sequence order |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `lessons`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Lesson identifier |
-| module_id | UUID | FK → modules.id, NOT NULL | Parent module |
-| slug | VARCHAR(200) | NOT NULL | URL-friendly identifier |
+| id | UUID (CHAR(36)) | PK | Lesson unit identifier |
+| module_id | UUID (CHAR(36)) | FK → modules.id, NOT NULL, ON DELETE CASCADE | Parent module |
+| slug | VARCHAR(200) | NOT NULL | Unique lesson slug within module |
 | title | VARCHAR(300) | NOT NULL | Lesson title |
 | description | TEXT | NULLABLE | Lesson summary |
-| estimated_minutes | INTEGER | NULLABLE | Estimated time to complete |
-| sort_order | INTEGER | NOT NULL | Order within module |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| learning_objectives | JSON / JSONB | NOT NULL, DEFAULT '[]' | Lesson-level learning outcomes |
+| estimated_minutes | INTEGER | NULLABLE | Estimated completion time in minutes |
+| sort_order | INTEGER | NOT NULL | Deterministic position in module |
+| content_version | INTEGER | NOT NULL, DEFAULT 1 | Incrementing revision counter for content updates |
+| | | UNIQUE(module_id, slug) | Unique slug per parent module |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `lesson_blocks`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Block identifier |
-| lesson_id | UUID | FK → lessons.id, NOT NULL | Parent lesson |
-| block_type | VARCHAR(50) | NOT NULL | 'text', 'code_example', 'media', 'activity_ref', 'callout' |
-| content | JSONB | NOT NULL | Block content (structure depends on block_type) |
-| sort_order | INTEGER | NOT NULL | Order within lesson |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| id | UUID (CHAR(36)) | PK | Block identifier |
+| lesson_id | UUID (CHAR(36)) | FK → lessons.id, NOT NULL, ON DELETE CASCADE | Parent lesson |
+| block_type | VARCHAR(50) | NOT NULL | Validated block type ('heading','text','list','code_example','callout','image','video') |
+| content | JSON / JSONB | NOT NULL | Validated, sanitized block-specific payload |
+| sort_order | INTEGER | NOT NULL | Block sequence within lesson |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Block creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 ---
 
