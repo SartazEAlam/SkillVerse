@@ -102,24 +102,44 @@ Register a new account.
 // Request
 { "email": "user@example.com", "password": "secureP@ss1" }
 // Response 200
-{ "access_token": "jwt...", "refresh_token": "rt...", "expires_in": 900 }
+{
+  "access_token": "jwt...",
+  "refresh_token": "rt...",
+  "expires_in": 900,
+  "user": { "id": "uuid", "email": "user@example.com", "role": "learner", "email_verified": false }
+}
 ```
+- Rate limited: 10 attempts per 15 minutes per IP.
+- Note on token transport: In Phase 2, tokens are returned in the JSON response body and stored in browser `localStorage`. For production hardening (Phase 5), the refresh token will transition to an `HttpOnly; Secure; SameSite=Lax` cookie and the access token will be held in client memory (see [docs/SECURITY.md](file:///d:/SkillVerse/docs/SECURITY.md)).
 
 ### `POST /api/v1/auth/refresh` 🌐
 ```json
 // Request
 { "refresh_token": "rt..." }
 // Response 200
-{ "access_token": "jwt...", "refresh_token": "rt_new...", "expires_in": 900 }
+{
+  "access_token": "jwt...",
+  "refresh_token": "rt_new...",
+  "expires_in": 900,
+  "user": { "id": "uuid", "email": "user@example.com", "role": "learner", "email_verified": false }
+}
 ```
-- Refresh tokens are rotated on each use.
+- Single-use token rotation: The supplied refresh token is immediately revoked upon use, and a new token pair is issued.
 
 ### `POST /api/v1/auth/logout` 🔓
-Revokes the current refresh token.
+Revokes all active refresh tokens for the authenticated user across all sessions and invalidates current client-held refresh tokens. Requires Bearer access token authentication.
+```json
+// Response 200
+{ "message": "Successfully logged out." }
+```
 
 ### `POST /api/v1/auth/verify-email` 🌐
 ```json
 { "token": "verification-token" }
+```
+```json
+// Response 200
+{ "message": "Email verified successfully." }
 ```
 
 ### `POST /api/v1/auth/forgot-password` 🌐

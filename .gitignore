@@ -45,3 +45,5 @@ logs/
 # Temporary
 tmp/
 temp/
+*.db
+*.sqlite*

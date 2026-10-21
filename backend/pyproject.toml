@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[project]
+name = "skillverse-backend"
+version = "0.1.0"
+description = "SkillVerse — cross-disciplinary interactive skill-learning platform API"
+requires-python = ">=3.11"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.34,<1.0",
+    # Database
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.14,<2.0",
+    "psycopg2-binary>=2.9,<3.0",       # synchronous PostgreSQL driver
+    # Validation / serialization
+    "pydantic>=2.0,<3.0",
+    "pydantic-settings>=2.0,<3.0",
+    "email-validator>=2.0,<3.0",
+    # Security
+    "pyjwt>=2.9,<3.0",
+    "pwdlib[argon2]>=0.2,<1.0",
+    # HTTP (for OAuth callbacks)
+    "httpx>=0.27,<1.0",
+    # Utilities
+    "python-multipart>=0.0.9",          # form data parsing
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "httpx>=0.27,<1.0",                 # TestClient transport
+    "ruff>=0.7,<1.0",
+    "mypy>=1.13,<2.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
+ignore = ["B008", "B904"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

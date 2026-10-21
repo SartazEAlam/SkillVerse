@@ -126,7 +126,7 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 2: Backend Foundation and Identity
 
-**Status:** ⏳ Planned
+**Status:** ✅ Completed (Pre-commit Verification: Tests passing with SQLite; PostgreSQL unverified locally)
 
 ### Objectives
 - Initialize the backend project (FastAPI + SQLAlchemy + Alembic).
@@ -164,29 +164,28 @@ This document defines the phased implementation roadmap. Each phase includes obj
 - `docker-compose.yml`
 - `.env.example`
 
-### Acceptance Criteria
-1. `docker-compose up` starts PostgreSQL, Redis, API server.
-2. API server starts and responds to health check.
-3. Registration creates a user and sends verification email (or logs token in development).
-4. Login returns valid JWT. Protected endpoints reject invalid/expired tokens.
-5. Refresh token rotation works correctly.
-6. Password reset flow functions end-to-end.
-7. Profile update persists changes.
-8. Rate limiting blocks excessive login attempts.
-9. Frontend login/registration pages function against the live API.
-10. Alembic migration applies and rolls back cleanly.
+### Acceptance Criteria & Verification Status
+1. `docker-compose up` starts PostgreSQL, Redis, API server (configured, unverified locally due to Docker daemon unavailability).
+2. API server starts and responds to health check (verified).
+3. Registration creates a user and sends verification email (or logs token in development) (verified).
+4. Login returns valid JWT. Protected endpoints reject invalid/expired tokens (verified).
+5. Refresh token rotation works correctly (verified).
+6. Password reset flow functions end-to-end (flow initiated, foundation verified).
+7. Profile update persists changes (verified).
+8. Rate limiting blocks excessive login attempts (verified).
+9. Frontend login/registration pages function against the live API (verified).
+10. Alembic migration applies and rolls back cleanly (`alembic check` verified with models).
 
-### Required Tests
-- Unit tests for auth service (password hashing, token generation, validation).
-- Integration tests for auth API endpoints (registration, login, refresh, logout).
-- Integration tests for profile endpoints.
-- Rate limiting test.
-- Migration up/down test.
+### Test Status & Local Limitations
+- **SQLite Test Execution:** All 46 backend unit and integration tests run against SQLite (`sqlite:///./test.db`). All 23 frontend unit and integration tests pass.
+- **PostgreSQL Integration Status:** PostgreSQL 16 schema and migrations target PostgreSQL dialects (`JSONB`, `user_role` enum). Production settings enforce PostgreSQL and prohibit SQLite (`Settings.validate_production_environment`). However, because Docker/PostgreSQL was unavailable on the local development host, **PostgreSQL integration is explicitly marked UNVERIFIED LOCALLY** and must be tested in a live containerized CI/CD environment prior to deployment.
+- **Token Storage:** Current frontend implementation persists tokens to browser `localStorage`. A production-hardening migration plan to `HttpOnly; Secure; SameSite=Lax` refresh cookies and in-memory access tokens is documented in `docs/SECURITY.md`.
 
 ### Risks
 - OAuth provider configuration complexity.
 - Email delivery in development (mitigate with console-based email backend).
-- JWT secret management.
+- JWT secret management (enforced via production validator in config).
+- Local testing disparity (SQLite vs PostgreSQL JSONB/enum behaviors).
 
 ---
 

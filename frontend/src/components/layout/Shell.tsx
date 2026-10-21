@@ -6,12 +6,15 @@ import { MobileNav } from './MobileNav'
 import { SkipLink } from '../ui/SkipLink'
 import { Sparkles } from 'lucide-react'
 
+import { AuthProvider } from '../../context/AuthContext'
+
 export const Shell: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-bg-base text-text-primary flex flex-col font-sans selection:bg-accent-violet/30 selection:text-text-primary">
+    <AuthProvider>
+      <div className="min-h-screen bg-bg-base text-text-primary flex flex-col font-sans selection:bg-accent-violet/30 selection:text-text-primary">
       <SkipLink />
 
       <div className="flex-1 flex w-full">
@@ -67,5 +70,6 @@ export const Shell: React.FC = () => {
         </div>
       </div>
     </div>
+  </AuthProvider>
   )
 }

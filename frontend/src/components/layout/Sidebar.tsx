@@ -34,6 +34,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
       label: 'Skill Map',
       icon: Network,
       badge: 'Interactive'
+    },
+    {
+      to: '/profile',
+      label: 'Profile & Settings',
+      icon: BookOpen,
+      badge: undefined
     }
   ]
 

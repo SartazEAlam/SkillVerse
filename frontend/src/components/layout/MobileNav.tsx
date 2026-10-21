@@ -37,7 +37,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
   const navItems = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/explore', label: 'Explore Courses', icon: Compass },
-    { to: '/skills', label: 'Skill Map', icon: Network }
+    { to: '/skills', label: 'Skill Map', icon: Network },
+    { to: '/profile', label: 'Profile & Settings', icon: BookOpen }
   ]
 
   return (

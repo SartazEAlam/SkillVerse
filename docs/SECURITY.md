@@ -7,17 +7,37 @@ This document defines the security requirements, threat model, and mitigation st
 ## Authentication and Authorization
 
 ### Authentication
-- **Password hashing:** bcrypt with a minimum work factor of 12.
-- **JWT access tokens:** Short-lived (15 minutes). Signed with a strong secret (HS256 minimum) or asymmetric key (RS256 preferred for production).
-- **Refresh tokens:** Stored hashed in the database. Rotated on each use. Revocable.
-- **OAuth 2.0:** PKCE (Proof Key for Code Exchange) flow for social authentication (Google initially; endpoints `GET /api/v1/auth/oauth/{provider}/authorize` and `POST /api/v1/auth/oauth/{provider}/callback`). Clients generate a cryptographically random `code_verifier` and SHA-256 `code_challenge` (S256). An unpredictable `state` parameter is verified server-side against CSRF.
-- **Email verification:** Required before full platform access. Tokens expire in 24 hours.
-- **Password reset:** Time-limited tokens (1 hour). One active reset token per user. Previous tokens invalidated on use.
-- **Rate limiting on auth endpoints:**
-  - Login: 10 attempts per 15 minutes per IP/email combination.
-  - Registration: 5 per hour per IP.
-  - Password reset: 3 per hour per email.
+- **Password hashing:** Argon2id (via `pwdlib[argon2]`) with strict complexity enforcement (min 8 chars, uppercase, lowercase, digit, special character).
+- **JWT access tokens:** Short-lived (15 minutes). Signed with HS256 using `JWT_SECRET_KEY` (stateless verification per request).
+- **Refresh tokens:** Cryptographically secure random 48-byte URL-safe string (`secrets.token_urlsafe(48)`). Stored as SHA-256 hashes in database `refresh_tokens` table. Rotated on each use; revoked upon user logout.
+- **OAuth 2.0 PKCE:** PKCE flow for social authentication (Google; endpoints `GET /api/v1/auth/oauth/{provider}/authorize` and `POST /api/v1/auth/oauth/{provider}/callback`). Clients generate a cryptographically random `code_verifier` and SHA-256 `code_challenge` (S256). An unpredictable `state` parameter is verified server-side with 10-minute expiry against CSRF. Redirect URIs are strictly validated against pre-configured whitelist / CORS origins.
+- **Email normalization:** All email addresses are normalized (stripped and lowercased) prior to database queries and storage to prevent duplicate registrations and case-sensitivity bypasses.
+- **Email verification:** Dev mode logs tokens to console; tokens expire in 24 hours. Token logging strictly suppressed in production environments.
+- **Password reset:** Time-limited tokens (1 hour). Initiations always return generic 200 responses to prevent account enumeration.
+- **Rate limiting on auth endpoints:** Sliding-window in-memory enforcement with `Retry-After` headers:
+  - Login: 10 attempts per 15 minutes per IP.
+  - Registration: 5 attempts per hour per IP.
+  - Password reset: 3 attempts per hour per email.
   - OAuth authorization & callback: 10 attempts per 15 minutes per IP.
+
+### Token Storage Architecture & Cookie Migration Plan
+- **Current Phase 2 Implementation:**
+  - Tokens are transmitted via JSON response bodies (`access_token`, `refresh_token`, `expires_in`).
+  - Frontend SPA stores tokens in `localStorage` (`skillverse_access_token`, `skillverse_refresh_token`).
+  - Automated 401 interception in `frontend/src/services/api.ts` transparently handles refresh rotation and retries queued requests.
+- **Known Security Limitation:**
+  - Storing tokens in `localStorage` exposes them to potential exfiltration if an XSS vulnerability exists. Additionally, stateless JWT access tokens remain valid until their 15-minute expiration window closes unless a Redis denylist is queried.
+- **Production Hardening Migration Plan (Targeted for Phase 5 / Pre-Release):**
+  1. *HttpOnly Cookie for Refresh Token:* Transition `refresh_token` to `HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=2592000` cookie set by the backend on login/register/refresh.
+  2. *In-Memory Access Token:* Keep `access_token` purely in React client memory (AuthContext state), never persisting it to browser storage.
+  3. *Silent Boot Refresh:* On application mount / page reload, execute a silent background `POST /api/v1/auth/refresh` with `credentials: 'include'` to hydrate the session.
+  4. *CSRF Mitigation:* Protect the cookie-authenticated refresh endpoint using an `X-CSRF-Token` header or double-submit cookie validation.
+  5. *Dual-Client Support:* Maintain Authorization header support for future mobile clients (Phase 7+) while enforcing cookies for web browsers.
+
+### Production Environment Invariants & Database Security
+- **No Silent SQLite Fallback:** Backend `Settings` strictly validates that when `ENVIRONMENT=production`, `DATABASE_URL` cannot use SQLite. Startup halts immediately with a validation error if PostgreSQL is not specified.
+- **Secret Length Enforcement:** Production mode rejects default placeholder keys and enforces a minimum 32-character `JWT_SECRET_KEY`.
+- **Database Testing Status:** Automated tests currently execute against SQLite (`test.db`) due to local Docker/PostgreSQL unavailability. **PostgreSQL 16 integration is explicitly marked UNVERIFIED LOCALLY** and must be tested against a live PostgreSQL service in the CI/CD pipeline.
 
 ### Authorization
 - **Server-side enforcement:** Every API endpoint checks authorization. Client-side checks are UX hints only.
