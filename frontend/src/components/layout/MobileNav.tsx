@@ -120,8 +120,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
         {/* Footer */}
         <div className="p-4 border-t border-border-subtle bg-bg-surface/30">
           <div className="text-xs text-text-muted">
-            <p className="font-semibold text-text-primary">Phase 1 Frontend Shell</p>
-            <p className="text-[11px] text-text-muted mt-0.5">Sample data demonstration</p>
+            <p className="font-semibold text-text-primary">SkillVerse</p>
+            <p className="text-[11px] text-text-muted mt-0.5">Universal Learning Platform</p>
           </div>
         </div>
       </div>

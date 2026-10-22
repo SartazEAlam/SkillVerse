@@ -12,15 +12,13 @@ import {
   MessageSquare,
   FileQuestion,
   Sparkles,
-  ArrowLeft,
-  Info
+  ArrowLeft
 } from 'lucide-react'
 import { SAMPLE_COURSES } from '../data/courses'
 import type { ActivityType } from '../types/course'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
-import { Modal } from '../components/ui/Modal'
 
 export const CourseOverviewPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>()
@@ -43,9 +41,6 @@ export const CourseOverviewPage: React.FC = () => {
     'mod-think-2': true
   })
 
-  // Modal state for lesson preview
-  const [previewModalOpen, setPreviewModalOpen] = useState(false)
-  const [previewLessonTitle, setPreviewLessonTitle] = useState('')
 
   if (!course) {
     return (
@@ -70,12 +65,8 @@ export const CourseOverviewPage: React.FC = () => {
     }))
   }
 
-  const handleStartLessonPreview = (lessonTitle: string) => {
-    setPreviewLessonTitle(lessonTitle)
-    setPreviewModalOpen(true)
-  }
-
   const getActivityIcon = (type: ActivityType) => {
+
     switch (type) {
       case 'code_exercise':
         return <Terminal className="w-3.5 h-3.5 text-accent-violet" />
@@ -169,26 +160,28 @@ export const CourseOverviewPage: React.FC = () => {
               </p>
             </div>
 
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full"
-              leftIcon={<Play className="w-4 h-4 fill-current" />}
-              onClick={() =>
-                handleStartLessonPreview(
-                  course.modules[0]?.lessons[0]?.title || 'First Lesson'
-                )
-              }
+            <Link
+              to={`/learn/${course.slug}`}
+              className="w-full block"
             >
-              Start Course Preview
-            </Button>
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                leftIcon={<Play className="w-4 h-4 fill-current" />}
+              >
+                Start Course Preview
+              </Button>
+            </Link>
+
 
             <div className="flex items-start gap-2 text-[11px] text-text-muted leading-tight">
               <Sparkles className="w-3.5 h-3.5 text-accent-cyan shrink-0 mt-0.5" />
               <span>
-                Phase 1 interactive preview mode. No account registration or backend enrollment required.
+                Universal lesson workspace enabled. Click to enter the interactive learning environment.
               </span>
             </div>
+
           </div>
         </div>
       </Card>
@@ -305,13 +298,14 @@ export const CourseOverviewPage: React.FC = () => {
                             {lesson.estimatedMinutes}m
                           </span>
 
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStartLessonPreview(lesson.title)}
-                          >
-                            Preview
-                          </Button>
+                          <Link to={`/learn/${course.slug}/${lesson.slug}`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                            >
+                              Learn
+                            </Button>
+                          </Link>
                         </div>
                       </div>
                     ))}
@@ -322,53 +316,7 @@ export const CourseOverviewPage: React.FC = () => {
           })}
         </div>
       </div>
-
-      {/* Interactive Lesson Preview Modal */}
-      <Modal
-        isOpen={previewModalOpen}
-        onClose={() => setPreviewModalOpen(false)}
-        title={`Lesson Preview: ${previewLessonTitle}`}
-        description="Phase 1 Lesson Workspace Simulation"
-        maxWidth="lg"
-      >
-        <div className="space-y-4">
-          <div className="p-3 rounded-lg bg-accent-violet/10 border border-accent-violet/25 flex items-start gap-2.5 text-xs text-text-secondary">
-            <Info className="w-4 h-4 text-accent-violet shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-text-primary">Phase 1 Demonstration Workspace</p>
-              <p className="text-[11px] mt-0.5">
-                Full course enrollment API, isolated Docker code sandbox execution, and AI tutoring are scheduled for Phase 3, Phase 5, and Phase 8 respectively. This preview shows the planned lesson briefing and interactive workspace structure.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-bg-base border border-border-subtle space-y-3">
-            <h3 className="text-sm font-bold text-text-primary">
-              Instructional Briefing & Objectives
-            </h3>
-            <p className="text-xs text-text-secondary leading-relaxed">
-              In this chapter, you study structural requirements before writing any markup. Ensure all inputs are explicitly tied to label elements using the <code className="text-accent-cyan bg-bg-surface px-1 py-0.5 rounded font-mono">for</code> / <code className="text-accent-cyan bg-bg-surface px-1 py-0.5 rounded font-mono">id</code> attributes, and define clear validation boundaries.
-            </p>
-
-            <div className="p-3 rounded-lg bg-bg-inset border border-border-subtle font-mono text-xs text-text-secondary space-y-1">
-              <div className="text-text-muted">// Starter Workspace Snippet</div>
-              <div className="text-accent-violet">&lt;form aria-labelledby="form-title"&gt;</div>
-              <div className="pl-4 text-text-primary">&lt;label for="username"&gt;Learner Identifier&lt;/label&gt;</div>
-              <div className="pl-4 text-text-primary">&lt;input id="username" type="text" required minlength="3" /&gt;</div>
-              <div className="text-accent-violet">&lt;/form&gt;</div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-border-subtle">
-            <span className="text-xs font-mono text-text-muted">
-              Status: Ready for Phase 5 Assessment Engine
-            </span>
-            <Button variant="primary" size="sm" onClick={() => setPreviewModalOpen(false)}>
-              Close Preview
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }
+

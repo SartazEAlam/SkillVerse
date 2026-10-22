@@ -34,7 +34,7 @@ export const DashboardPage: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-4 h-4 text-accent-violet shrink-0" />
           <span>
-            <strong className="text-text-primary">Phase 1 Preview Mode:</strong> This dashboard is populated with realistic demonstration data for <strong className="text-text-primary">{data.learnerName}</strong>.
+            <strong className="text-text-primary">Learner Preview:</strong> This dashboard is populated with realistic demonstration data for <strong className="text-text-primary">{data.learnerName}</strong>.
           </span>
         </div>
         <Badge variant="violet" size="sm">

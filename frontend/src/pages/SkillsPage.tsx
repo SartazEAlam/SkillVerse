@@ -491,7 +491,7 @@ export const SkillsPage: React.FC = () => {
                     </div>
                   ) : (
                     <p className="text-xs text-text-muted italic">
-                      Terminal node in the current Phase 1 curriculum map.
+                      Terminal node in the current curriculum map.
                     </p>
                   )}
                 </div>

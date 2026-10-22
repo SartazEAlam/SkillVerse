@@ -271,3 +271,26 @@ The learning workspace is the primary environment where learners study lessons a
 4. **Persistent navigation context.** The sidebar shows the learner's position within the module. The breadcrumb shows position within the course.
 5. **Non-intrusive AI tutor.** The AI tutor is accessible but not persistent. It appears in an expandable panel or slide-over, not as a chatbot bubble on every page.
 6. **Feedback is immediate and specific.** Activity results appear in-place with clear pass/fail status, specific error messages for failed tests, and actionable hints.
+
+---
+
+## Implemented Universal Lesson Workspace & Content Blocks (Phase 4)
+
+Phase 4 establishes the universal learning workspace layout and content block component system:
+
+### 1. Workspace Layout Primitives
+- **`LessonWorkspaceHeader`:** Fixed `h-16` navigation bar featuring Course Overview return link with icon, course title, active module/lesson breadcrumbs, version status badge (`Published v{n}` in `accent-violet` or `Demo Track` in `amber`), lesson counter badge (`1 / 3`), and a mobile hamburger drawer toggle.
+- **`LessonSidebar`:** Collapsible module curriculum outline (`w-80`). Features chapter tags (`Chapter 1`), collapsible module accordion with `ChevronDown`/`ChevronRight`, and individual lesson links. Active lesson is highlighted with `bg-accent-violet/15 text-accent-violet border-l-2 border-accent-violet font-semibold` and `aria-current="page"`. On mobile viewports (`< 1024px`), the sidebar slides out as a drawer with a semi-transparent backdrop and closes upon backdrop click, close button tap, or `Escape` keypress.
+- **`LessonContent`:** Scrollable reading surface with maximum reading container (`max-w-3xl mx-auto px-4 sm:px-8 py-8`). Includes learning objectives box with `CheckCircle2` success markers, ordered block rendering, previous/next lesson controls with boundary awareness, and a subtle keyboard shortcuts reminder (`←` / `→`).
+
+### 2. Universal Block System
+All content blocks in `features/lessons/blocks/` map to the Phase 3 backend schema:
+- **`HeadingBlock`:** Semantic HTML heading tags (`h2`, `h3`, `h4`) with proportional scale, letter tracking, and text anchor IDs.
+- **`TextBlock`:** Safe markdown rendering supporting `**bold**`, `*italic*`, `` `inline code` ``, `[safe links](url)`, and `> blockquote` styling. Malicious script tags and event handlers are strictly stripped.
+- **`ListBlock`:** Accessible ordered (`ol`) and unordered (`ul`) lists with custom markers (`marker:text-accent-violet`), generous line spacing, and markdown formatting.
+- **`CodeExampleBlock`:** High-contrast code container (`bg-bg-inset border border-border-subtle rounded-xl font-mono text-xs sm:text-sm`). Features a top utility bar with language tag (JavaScript, TypeScript, Python, HTML, CSS, SQL), optional caption, and a one-click copy button with animated "Copied!" confirmation and fallback.
+- **`CalloutBlock`:** Four distinct semantic callout variants (`key_concept`, `tip`, `warning`, `info`) with tailored Lucide icons, colored borders, and elevated backgrounds.
+- **`ImageBlock`:** Responsive image cards with lazy-loading, mandatory `alt_text`, optional captions, loading skeletons, and graceful fallback states for failed image URLs.
+- **`VideoBlock`:** Sandboxed iframe wrapper (`aspect-video`) with allowlisted provider parsing (YouTube, Vimeo), privacy parameters, duration tags, transcript links, and safe external link fallbacks.
+- **`UnknownBlock`:** Non-crashing diagnostic fallback displaying block metadata in a contained amber warning card.
+

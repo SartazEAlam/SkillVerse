@@ -83,6 +83,50 @@ frontend/src/
 
 **Component composition:** UI primitives from shadcn/ui are customized through the design system. Feature components compose these primitives without reimplementing accessibility behavior.
 
+### Universal Lesson Workspace Architecture (Phase 4)
+
+The Phase 4 lesson workspace decouples content interpretation from rendering, providing a consistent learning experience across programming, business, communication, and design courses without discipline-specific forks:
+
+```
+                  ┌─────────────────────────────────────────────────────────┐
+                  │                 GET /api/v1/courses/:slug               │
+                  │       GET /api/v1/courses/:courseSlug/lessons/:lessonSlug│
+                  └────────────────────────────┬────────────────────────────┘
+                                               │ JSON Payload
+                                               ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               LessonWorkspace Controller                               │
+│  - Stale Request Invalidation (AbortController)                                        │
+│  - Route Parameter Synchronization (/learn/:courseSlug/:lessonSlug)                    │
+│  - Keyboard Shortcut Coordinator (ArrowLeft / ArrowRight)                              │
+│  - Demo Fallback Isolation (explicit "Demo Track" vs. API 500 error display)           │
+├───────────────────────────────┬────────────────────────────────────────────────────────┤
+│     LessonWorkspaceHeader     │                     LessonSidebar                      │
+│ - Course breadcrumb context   │ - Module collapse / expand state                       │
+│ - Published version indicator │ - Active lesson highlighting (aria-current="page")     │
+│ - Progress counter (1 / 3)    │ - Mobile sliding drawer with backdrop & Esc close      │
+├───────────────────────────────┴────────────────────────────────────────────────────────┤
+│                                    LessonContent                                       │
+│  - Lesson description, metadata, and learning objectives callout                       │
+│  - Bounded Next/Previous controls (safe Course Overview transitions)                   │
+│                                               │                                        │
+│                                               ▼                                        │
+│                                 Universal LessonRenderer                               │
+│                   Defensive block dispatch sorted by sort_order                        │
+│   ┌───────────────┬────────────────┬────────────────┬──────────────────────────────┐   │
+│   │ HeadingBlock  │   TextBlock    │   ListBlock    │      CodeExampleBlock        │   │
+│   │ (h2, h3, h4)  │ (safe inline md│ (ordered/unord)│ (syntax highlight, copy btn) │   │
+│   ├───────────────┼────────────────┼────────────────┼──────────────────────────────┤   │
+│   │ CalloutBlock  │   ImageBlock   │   VideoBlock   │        UnknownBlock          │   │
+│   │ (key concepts)│ (alt, loading) │ (embed allow)  │ (diagnostic non-crashing)    │   │
+│   └───────────────┴────────────────┴────────────────┴──────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Defensive Block Dispatch:** Each content block is typed via `TypedLessonBlock` (`types/lesson.ts`) and rendered by a dedicated component in `features/lessons/blocks/`.
+- **Unknown Block Containment:** Unrecognized block types render a diagnostic warning card rather than throwing an exception or unmounting the tree.
+- **Strict Stale Request Protection:** In-flight network requests are bound to an `AbortController`. When learners quickly navigate between lessons or modules, obsolete network responses are aborted before touching component state.
+
 ---
 
 ## Backend Architecture
@@ -332,3 +376,8 @@ API ← Poll / webhook for result
 ### ADR-006: Immutable Course Versions
 **Decision:** Published courses are versioned and immutable. Edits create new versions.
 **Rationale:** Learners enrolled in a course version should not see their content change mid-course. Progress and grades must reference a specific version. This also enables safe rollback of content changes.
+
+### ADR-007: Universal Cross-Disciplinary Content Block Renderer
+**Decision:** Use a single, unified block-dispatch lesson rendering system for all disciplines instead of maintaining separate custom viewers for coding, spoken English, or productivity.
+**Rationale:** Maintaining distinct renderers for different subject areas leads to code duplication, inconsistent keyboard accessibility, divergent visual aesthetics, and high maintenance overhead. A schema-driven block model (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`) provides full expressive capability across coding and non-coding domains while guaranteeing WCAG 2.2 accessibility, responsive behavior, and robust security sandboxing across the entire curriculum.
+

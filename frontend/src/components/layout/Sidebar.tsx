@@ -165,8 +165,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
 
         {!isCollapsed && (
           <div className="px-2 pt-1 flex items-center justify-between text-[11px] text-text-muted font-mono">
-            <span>Phase 1 Shell</span>
-            <span className="text-accent-violet">Demo Mode</span>
+            <span>SkillVerse</span>
+            <span className="text-accent-violet">v1.0</span>
           </div>
         )}
       </div>

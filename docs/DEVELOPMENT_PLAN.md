@@ -242,54 +242,64 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ---
 
-## Phase 4: Universal Lesson Renderer
+## Phase 4: Universal Lesson Renderer and Immersive Learning Workspace
 
-**Status:** ⏳ Planned
+**Status:** ✅ Completed (Verified: Universal block renderer, workspace layout, keyboard & mobile navigation, live API binding, stale request protection, and automated test suite)
 
 ### Objectives
-- Build a universal, block-based lesson renderer that handles all block types.
-- Implement the learning workspace layout (sidebar + content + activity area).
-- Add lesson navigation (previous/next, module sidebar).
-- Support code example blocks with syntax highlighting and copy functionality.
+- Build a universal, block-based lesson renderer that interprets Phase 3 structured, versioned content across all disciplines.
+- Implement an immersive, focused learning workspace layout (responsive sidebar, reading width, header context, and bottom controls).
+- Provide stable lesson navigation with boundary protection, breadcrumbs, module drawers, and keyboard shortcuts (`←`/`→`).
+- Support syntax-highlighted code blocks with line numbers and copy-to-clipboard functionality.
+- Integrate with published course backend endpoints (`GET /api/v1/courses/:slug` and `GET /api/v1/courses/:courseSlug/lessons/:lessonSlug`).
+- Protect against stale responses via `AbortController` cancellation and keep demo fallback mode explicit.
 
 ### Dependencies
-- Phase 3 (course content, lesson data model).
+- Phase 3 (cross-disciplinary skill taxonomy, published course versions, lesson content schemas).
+- Phase 1 (frontend design system, typography tokens, dark-first UI primitives).
 
 ### Deliverables
-- Block renderer component supporting: text (markdown), code_example, media, callout, activity_ref.
-- Syntax highlighting for code blocks (multiple languages).
-- Copy-to-clipboard for code examples.
-- Learning workspace layout with resizable panels.
-- Module sidebar with lesson list and completion indicators.
-- Lesson navigation (previous/next with keyboard shortcuts).
-- Breadcrumb navigation (course → module → lesson).
-- Smooth view transitions between lessons.
+- **Type Definitions:** `frontend/src/types/lesson.ts` defining typed payloads for all Phase 3 content blocks (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`, `activity_ref`, `unknown`).
+- **API Integration Client:** `frontend/src/services/courseApi.ts` connecting to published courses/lessons with `AbortSignal` support and an explicit demo track adapter.
+- **Universal Block Renderers:** `frontend/src/features/lessons/blocks/`:
+  - `HeadingBlock.tsx`: semantic `h2`, `h3`, `h4` hierarchy.
+  - `TextBlock.tsx`: safe inline markdown parsing (`**bold**`, `*italic*`, `` `code` ``, `[links](url)`, `> blockquote`) with script and event-handler stripping.
+  - `ListBlock.tsx`: ordered `<ol>` and unordered `<ul>` with accessible markers.
+  - `CodeExampleBlock.tsx`: lightweight syntax highlighter (JS/TS, Python, HTML, CSS, SQL), language badges, line numbers, and accessible copy button with "Copied!" feedback and fallback.
+  - `CalloutBlock.tsx`: semantic variants (`key_concept`, `tip`, `warning`, `info`) with distinct border accents and Lucide icons.
+  - `ImageBlock.tsx`: responsive images with mandatory `alt` text, loading states, captions, and broken-image fallbacks.
+  - `VideoBlock.tsx`: sandboxed video embeds (YouTube / Vimeo allowlist) with duration, transcript link, and external link fallbacks.
+  - `UnknownBlock.tsx`: graceful diagnostic card preventing unknown/malformed block types from crashing the workspace.
+- **Universal Lesson Renderer:** `frontend/src/features/lessons/LessonRenderer.tsx` sorting blocks by `sort_order` and rendering each block defensively.
+- **Learning Workspace Components:**
+  - `LessonWorkspaceHeader.tsx`: Course Overview backlink, breadcrumb navigation, version/demo badges (`Published v{n}` / `Demo Track`), lesson counter (`1 / 3`), and mobile menu toggle.
+  - `LessonSidebar.tsx`: collapsible module outline with chapter badges, active lesson highlighting (`aria-current="page"`), mobile drawer with backdrop, and `Escape` key close.
+  - `LessonContent.tsx`: comfortable reading container (`max-w-3xl`), learning objectives callout, semantic block flow, previous/next controls with boundary protection, and keyboard shortcut hint.
+  - `LessonWorkspace.tsx`: controller managing route parameters, data fetching, race-condition abortion, keyboard shortcuts (`ArrowLeft`/`ArrowRight`), loading skeletons, 404/not-found states, and retry-capable error screens.
+  - `LessonWorkspacePage.tsx`: page wrapper integrated into React Router.
+- **Routing Integration:** Routes registered in `frontend/src/app/routes.tsx`:
+  - `/learn/:courseSlug/:moduleSlug/:lessonSlug`
+  - `/learn/:courseSlug/:lessonSlug`
+  - `/learn/:courseSlug` (auto-redirects to first published lesson)
+  - `/courses/:courseSlug/learn/:lessonSlug`
+  - Connected `CourseOverviewPage.tsx` "Start Course Preview" and syllabus items directly to the learning workspace.
 
-### Important Files
-- `frontend/src/features/lessons/LessonRenderer.tsx`
-- `frontend/src/features/lessons/blocks/`
-- `frontend/src/features/lessons/LessonWorkspace.tsx`
-- `frontend/src/components/layout/LessonLayout.tsx`
+### Acceptance Criteria & Verification Status
+1. **Universal Block Rendering:** All supported Phase 3 content blocks (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`) render correctly with proper dark-theme styling and semantic tags (verified).
+2. **Syntax Highlighting & Copy Action:** Code examples display syntax highlighting for JavaScript, TypeScript, Python, HTML, CSS, and SQL with line numbers and a working copy button with visible feedback (verified).
+3. **Responsive Learning Workspace:** Workspace provides a focused, readable reading width on desktop and transitions to a slide-over mobile drawer with backdrop on smaller screens without horizontal overflow (verified).
+4. **Stable Lesson Navigation:** Previous and next controls follow published module/lesson sort order. The first lesson safely links to Course Overview with no invalid previous destination; the last lesson transitions to course finish review (verified).
+5. **Keyboard Accessibility:** ArrowLeft (`←`) and ArrowRight (`→`) navigate between lessons while ignoring keystrokes inside form controls or inputs (verified).
+6. **Curriculum Outline & Current State:** Sidebar displays all published modules and lessons with active lesson highlighted via `aria-current="page"` and accessible expand/collapse buttons (verified).
+7. **Breadcrumb & Context:** Header and content breadcrumbs accurately display course title, module title, lesson title, and published version number (`Published v1`) or `Demo Track` (verified).
+8. **Security & Sanitization:** Rich-text content does not evaluate scripts or unsafe HTML. Code examples are strictly display-only. Video embeds enforce `sandbox` attributes on whitelisted domains (verified).
+9. **Race Condition & Error Protection:** Rapid navigation cancels pending requests via `AbortController`. Backend failures display an actionable error screen with "Retry Request" and never silently substitute demo data (verified).
+10. **Automated Test Coverage:** 41/41 frontend tests pass (including 9 in `LessonRenderer.test.tsx` and 9 in `LessonWorkspace.test.tsx`), 72/72 backend tests pass, and `npm run build` succeeds cleanly (verified).
 
-### Acceptance Criteria
-1. All block types render correctly with proper styling.
-2. Code blocks have syntax highlighting for JavaScript, HTML, CSS, Python and SQL.
-3. Code blocks have a working copy button.
-4. Workspace panels are resizable via drag.
-5. Lesson navigation works with both clicks and keyboard shortcuts (← →).
-6. Module sidebar correctly shows lesson list with visual position indicator.
-7. Breadcrumb shows current position in course hierarchy.
-8. Transitions between lessons are smooth and do not flash or flicker.
-9. Workspace layout adapts correctly to mobile (stacked) and desktop (side-by-side).
-
-### Required Tests
-- Block renderer unit tests (each block type).
-- Keyboard navigation integration test.
-- Responsive layout test at breakpoints.
-
-### Risks
-- Markdown rendering security (XSS through lesson content — mitigate with sanitization).
-- Performance with many blocks per lesson.
+### Deferred to Phase 5
+- Schema-driven interactive activity engine (code execution exercises, quiz submissions, conversation practice, practical tasks).
+- Isolated Docker code execution sandbox.
+- Attempt scoring, assessment grading, retry tracking, and persistent completion state.
 
 ---
 

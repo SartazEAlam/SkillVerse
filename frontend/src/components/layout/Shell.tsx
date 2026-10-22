@@ -51,7 +51,7 @@ export const Shell: React.FC = () => {
                 </div>
                 <span className="font-semibold text-text-secondary">SkillVerse Platform</span>
                 <span className="text-border-medium">•</span>
-                <span>Phase 1 Frontend Shell</span>
+                <span>Universal Learning Platform</span>
               </div>
 
               <div className="flex items-center gap-6">

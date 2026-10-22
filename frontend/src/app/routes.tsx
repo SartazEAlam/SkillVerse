@@ -8,44 +8,62 @@ import { LoginPage } from '../pages/LoginPage'
 import { RegisterPage } from '../pages/RegisterPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { NotFoundPage } from '../pages/NotFoundPage'
+import { LessonWorkspacePage } from '../pages/LessonWorkspacePage'
 
 export const router = createBrowserRouter([
+  {
+    path: '/learn/:courseSlug/:moduleSlug/:lessonSlug',
+    element: <LessonWorkspacePage />,
+  },
+  {
+    path: '/learn/:courseSlug/:lessonSlug',
+    element: <LessonWorkspacePage />,
+  },
+  {
+    path: '/learn/:courseSlug',
+    element: <LessonWorkspacePage />,
+  },
+  {
+    path: '/courses/:courseSlug/learn/:lessonSlug',
+    element: <LessonWorkspacePage />,
+  },
   {
     path: '/',
     element: <Shell />,
     children: [
       {
         index: true,
-        element: <DashboardPage />
+        element: <DashboardPage />,
       },
       {
         path: 'explore',
-        element: <ExplorePage />
+        element: <ExplorePage />,
       },
       {
         path: 'skills',
-        element: <SkillsPage />
+        element: <SkillsPage />,
       },
       {
         path: 'courses/:slug',
-        element: <CourseOverviewPage />
+        element: <CourseOverviewPage />,
       },
       {
         path: 'login',
-        element: <LoginPage />
+        element: <LoginPage />,
       },
       {
         path: 'register',
-        element: <RegisterPage />
+        element: <RegisterPage />,
       },
       {
         path: 'profile',
-        element: <ProfilePage />
+        element: <ProfilePage />,
       },
       {
         path: '*',
-        element: <NotFoundPage />
-      }
-    ]
-  }
+        element: <NotFoundPage />,
+      },
+    ],
+  },
 ])
+

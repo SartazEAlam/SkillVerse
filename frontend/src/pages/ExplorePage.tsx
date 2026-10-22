@@ -53,7 +53,7 @@ export const ExplorePage: React.FC = () => {
               Course Catalog
             </Badge>
             <span className="text-xs font-mono text-text-muted">
-              Phase 1 Curriculum
+              Published Tracks
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-text-primary tracking-tight">

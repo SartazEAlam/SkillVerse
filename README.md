@@ -12,13 +12,15 @@ SkillVerse is an immersive learning platform that helps people acquire usable sk
   FastAPI application foundation with SQLAlchemy models, Alembic migrations, Argon2id password hashing, JWT access + refresh token rotation, Google OAuth 2.0 PKCE, rate limiting, and profile management (GDPR export, soft delete). Includes frontend auth integration (Login, Register, Profile, AuthContext).
 - **Phase 3 — Cross-Disciplinary Skill Taxonomy, Course Catalog & Versioned Content Model** (completed)
   Domain model and APIs for cross-disciplinary skills, cycle-safe prerequisite DAG, courses, modules, lessons, structured content blocks, and immutable published course versions. Public catalog discovery with filtering (discipline, difficulty), search, and deterministic pagination. Includes idempotent seed script populating 7 disciplines, 15 skills, 12 prerequisite edges, and 3 full representative courses (Web Dev, Spoken English, Personal Productivity) published through the standard versioning service. *Note: 72 automated tests run against SQLite test harness; live PostgreSQL 16 integration remains unverified locally due to local Docker daemon unavailability and must be verified in CI/CD.*
+- **Phase 4 — Universal Lesson Renderer & Immersive Learning Workspace** (completed)
+  Universal, cross-disciplinary block-based lesson rendering engine supporting `heading`, `text` (safe markdown & sanitized scripts), `list`, `code_example` (syntax highlighting for JS/TS, Python, HTML, CSS, SQL with copy-to-clipboard), `callout`, `image`, `video` (sandboxed embeds with allowlist), and non-crashing fallback for unknown blocks. Includes dedicated learning workspace with collapsible module curriculum outline, responsive mobile drawer, keyboard navigation (`←`/`→`), boundary protection, published version badges (`Published v{n}` / `Demo Track`), and live backend API integration with `AbortController` stale-response cancellation. 41 automated frontend tests and 72 backend tests passing.
 
 ## Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
-| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phase 1, 2 & 3 contracts) |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phase 2 & 3) |
+| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1, 2, 3 contracts & 4 workspace) |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2 & 3) |
 | Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated |
 | Cache / Jobs | Redis 7 (Phase 2 docker-compose ready, Phase 4+ feature use) | Configured |
 | Code Execution | Isolated sandbox (Docker-based) | Planned (Phase 5) |
@@ -37,16 +39,17 @@ SkillVerse/
 │   ├── DESIGN_SYSTEM.md     # Visual design principles & tokens
 │   ├── SECURITY.md          # Security requirements and policies
 │   └── DEVELOPMENT_PLAN.md  # Phased implementation roadmap
-├── frontend/                # React + Vite application (Phases 1 & 2)
+├── frontend/                # React + Vite application (Phases 1, 2, 3 & 4)
 │   ├── src/
 │   │   ├── app/             # Application entry and React Router definitions
 │   │   ├── components/      # Design system primitives & responsive layout shell
 │   │   ├── context/         # AuthContext and session state
 │   │   ├── data/            # Typed course catalog, skills taxonomy, and dashboard demo data
-│   │   ├── pages/           # Dashboard, Explore, Skills, Course Overview, Login, Register, Profile, 404
-│   │   ├── services/        # API client and token refresh interceptors
+│   │   ├── features/        # Feature modules: lessons/ (workspace, universal renderer, blocks)
+│   │   ├── pages/           # Dashboard, Explore, Skills, Course Overview, Lesson Workspace, Auth
+│   │   ├── services/        # API clients (courseApi, api) and token refresh interceptors
 │   │   ├── test/            # Vitest unit and integration test suite
-│   │   └── types/           # TypeScript contracts for auth, courses, skills, and progress
+│   │   └── types/           # TypeScript contracts for auth, catalog, courses, skills, and lessons
 │   ├── package.json
 │   └── vite.config.ts
 ├── backend/                 # FastAPI application (Phase 2)
@@ -90,7 +93,7 @@ cd backend
 # Create and activate a virtual environment
 python -m venv .venv
 # Windows:
-.venv\Scripts\activate
+.venv/Scripts/activate
 # Linux/macOS:
 # source .venv/bin/activate
 
