@@ -52,6 +52,12 @@ export interface VideoBlockContent {
   transcript_url?: string | null
 }
 
+export interface ActivityBlockContent {
+  activity_id: string
+  title?: string | null
+  instructions?: string | null
+}
+
 // Discriminated union of strongly typed lesson blocks
 export type TypedLessonBlock =
   | { id: string; block_type: 'heading'; content: HeadingBlockContent; sort_order: number }
@@ -61,6 +67,7 @@ export type TypedLessonBlock =
   | { id: string; block_type: 'callout'; content: CalloutBlockContent; sort_order: number }
   | { id: string; block_type: 'image'; content: ImageBlockContent; sort_order: number }
   | { id: string; block_type: 'video'; content: VideoBlockContent; sort_order: number }
+  | { id: string; block_type: 'activity'; content: ActivityBlockContent; sort_order: number }
   | { id: string; block_type: string; content: Record<string, unknown>; sort_order: number }
 
 // ── Lesson Workspace Navigation Models ─────────────────────────────────────

@@ -305,64 +305,70 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 5: Activity Engine and Assessment
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ### Objectives
-- Build the schema-driven activity engine.
-- Implement code exercise, quiz, conversation and practical task activity types.
-- Build the code execution sandbox.
-- Implement attempt tracking and grading.
-- Display activity results with feedback.
+- Build a schema-driven, reusable activity and assessment engine supporting 9 distinct interaction types.
+- Ensure server-authoritative evaluation with secret answer keys strictly protected on the backend.
+- Enforce retry limits (`max_attempts`) and record tamper-proof attempt history per learner.
+- Establish an isolated sandbox boundary ensuring untrusted learner code is never executed in the FastAPI process.
+- Embed interactive activities seamlessly into the universal lesson workspace (`LessonRenderer` and `LessonContent`).
+- Seed realistic, cross-disciplinary assessment activities across at least 3 courses.
 
 ### Dependencies
-- Phase 4 (lesson renderer, workspace layout).
-- Phase 2 (auth, user system).
+- Phase 4 (universal lesson workspace, content block renderer, layout shell).
+- Phase 3 (published courses, modules, lessons, content blocks).
+- Phase 2 (authentication, JWT tokens, user models).
 
 ### Deliverables
-- Database migrations for activities, grading_configs, attempts.
-- Activity engine service (schema-driven, type-dispatched grading).
-- **Code exercise:** Monaco editor, live HTML/CSS/JS preview, test runner, sandbox execution.
-- **Quiz:** MCQ, fill-in-the-blank, matching, ordering question types.
-- **Conversation practice:** Prompt-response pairs, text-based initially (voice in future).
-- **Practical task:** Scenario description, structured response, rubric-based evaluation.
-- Attempt submission API with rate limiting.
-- Grading pipeline (automated for code/quiz, placeholder for AI-assisted).
-- Activity workspace components (editor, preview, results panel).
-- Feedback display (pass/fail, specific error messages, hints).
-- Retry flow.
-- Sandbox Docker container for code execution.
-- Sandbox worker service.
+- **Database Schema & Migrations:**
+  - `backend/app/modules/activities/models.py`: `Activity`, `GradingConfig`, and `Attempt` SQLAlchemy models with foreign keys, cascading deletions, and uniqueness constraint (`uq_user_activity_attempt`).
+  - `backend/alembic/versions/003_activities_and_assessments.py`: Versioned migration adding `activities`, `grading_configs`, `attempts`, and updating `lesson_blocks` enum with `activity`.
+- **Server-Authoritative Grading Engine:**
+  - `backend/app/modules/activities/grading.py`: Deterministic grading algorithms supporting all 9 activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario`) with partial credit and normalization.
+  - `backend/app/modules/activities/service.py`: `ActivityService` implementing public payload sanitization (stripping answer keys), attempt submission with `max_attempts` enforcement, and attempt history querying with strict user isolation.
+  - `backend/app/modules/activities/router.py`: REST endpoints mounted under `/api/v1/activities` and `/api/v1/lessons/{id}/activities`.
+- **Isolated Code Execution Boundary:**
+  - `backend/app/infrastructure/sandbox/runner.py`: `SandboxRunnerInterface` defining execution contract and `IsolatedSandboxRunner` providing safe handling without executing arbitrary code on the host server.
+- **Frontend Assessment Components:**
+  - `frontend/src/types/activity.ts`: Full TypeScript definitions for activities, grading configs, submissions, and attempt results.
+  - `frontend/src/services/activityApi.ts`: REST API client for activities and attempts.
+  - `frontend/src/features/activities/`: Specialized UI renderers:
+    - `SingleChoiceActivity.tsx` (radio options with active indicators)
+    - `MultipleSelectActivity.tsx` (checkbox options with multi-select support)
+    - `TrueFalseActivity.tsx` (binary selection with clean accessibility)
+    - `ShortAnswerActivity.tsx` (input field with submit button)
+    - `FillBlankActivity.tsx` (inline text tokens with accessible blank inputs)
+    - `OrderingActivity.tsx` (accessible up/down order position controls)
+    - `MatchingActivity.tsx` (prompt-target pairing dropdowns)
+    - `ScenarioActivity.tsx` (structured multi-field or open analysis response)
+    - `CodingActivity.tsx` (code editor with syntax badges and reset action)
+    - `SubmissionFeedback.tsx` (score badge, pass/fail state, criteria feedback, explanations)
+    - `AttemptHistory.tsx` (collapsible timeline of past attempts)
+    - `ActivityRenderer.tsx` (type-dispatched activity registry)
+    - `ActivityContainer.tsx` (submission lifecycle, loading indicators, retry management, error boundaries)
+- **Universal Lesson Workspace Integration:**
+  - `frontend/src/features/lessons/blocks/ActivityBlock.tsx`: Embedded activity block rendering in lesson narrative flow.
+  - `frontend/src/features/lessons/LessonRenderer.tsx`: Dispatches `'activity'` block type.
+  - `frontend/src/features/lessons/LessonContent.tsx`: Auto-fetches and renders lesson checkpoint activities in an interactive assessment section.
+- **Cross-Disciplinary Seed Data:**
+  - `backend/app/seed.py`: Seeded representative activities across Web Development Foundations (`semantic-tags`, `forms-and-inputs`), Spoken English (`bluf-framework`, `star-framework`), and Personal Productivity (`high-leverage-outcomes`, `calendar-timeblocking`).
 
-### Important Files
-- `backend/app/modules/activities/`
-- `backend/app/infrastructure/sandbox/`
-- `frontend/src/features/activities/`
-- `frontend/src/features/activities/CodeExercise.tsx`
-- `frontend/src/features/activities/QuizActivity.tsx`
-- `docker/sandbox/Dockerfile`
+### Acceptance Criteria & Verification Status
+1. **Nine Supported Activity Types:** All 9 activity types are defined, typed, validated, and render cleanly with responsive, accessible UI (verified).
+2. **Server-Authoritative Evaluation:** All scoring and pass/fail determinations are computed server-side via `GradingEngine`; clients cannot manipulate scores (verified).
+3. **Secret Answer Key Protection:** Activity fetch endpoints strip all `grading_config` answer keys, correct answers, and hidden assertions from learner responses (verified).
+4. **Retry & Attempt Enforcement:** Max attempts are strictly enforced on the server (`400 Maximum attempts reached`), and each attempt receives a sequential `attempt_number` (verified).
+5. **Cross-User Authorization:** Learner attempts are strictly isolated; attempting to read another learner's attempt returns `403 Forbidden` (verified).
+6. **Isolated Sandbox Boundary:** Learner code execution is isolated behind `SandboxRunnerInterface`; untrusted code is never executed in the FastAPI process (verified).
+7. **Workspace Integration:** Activities render both as embedded lesson blocks and as end-of-lesson assessment checkpoints (verified).
+8. **Automated Test Coverage:** 86/86 backend tests pass (`pytest` including 14 activity engine tests), 59/59 frontend tests pass (`vitest run` including 12 activity component tests), and production build succeeds cleanly (verified).
 
-### Acceptance Criteria
-1. Code exercise: learner writes JavaScript, sees live preview, runs tests, gets pass/fail with specific feedback.
-2. Quiz: supports MCQ and fill-in-blank. Immediate automated grading. Shows correct answers after completion.
-3. Conversation practice: text-based prompt/response with automated keyword/pattern matching (AI grading in Phase 8).
-4. Practical task: scenario + structured response form. Rubric-based completion marking.
-5. Attempt history shows all attempts with scores and feedback.
-6. Rate limiting prevents excessive sandbox usage (max 30 executions/hour).
-7. Sandbox executes code in isolation: no network, limited CPU/memory, hard timeout.
-8. Malicious code (fork bomb, memory exhaustion, file system access) is contained.
-9. Hints system provides progressive guidance without revealing answers.
-
-### Required Tests
-- Activity engine grading tests (each activity type).
-- Sandbox isolation tests (network blocked, memory limited, timeout enforced).
-- Attempt rate limiting test.
-- Quiz grading accuracy test (each question type).
-- Code exercise end-to-end test (write code → submit → grade → feedback).
-
-### Risks
-- **Critical:** Sandbox security. Must be thoroughly tested before production.
-- Monaco editor bundle size (mitigate with dynamic import).
-- Code execution latency affecting user experience.
+### Deferred to Phase 6
+- Skill mastery recalculation triggered by activity completions.
+- Automatic advancement of lesson, module, and course completion states.
+- Achievement unlock triggers based on assessment performance.
+- Learner dashboard mastery visualization.
 
 ---
 

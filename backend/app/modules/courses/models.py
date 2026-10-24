@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass
 
 from sqlalchemy import (
     JSON,
@@ -20,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+import app.modules.activities.models  # noqa: F401
 from app.infrastructure.database import Base, TimestampMixin, generate_uuid
 from app.modules.skills.models import Discipline, Skill
 
@@ -230,6 +235,12 @@ class Lesson(TimestampMixin, Base):
         back_populates="lesson",
         cascade="all, delete-orphan",
         order_by="LessonBlock.sort_order",
+    )
+    activities: Mapped[list[Any]] = relationship(
+        "Activity",
+        back_populates="lesson",
+        cascade="all, delete-orphan",
+        order_by="Activity.sort_order",
     )
 
     def __repr__(self) -> str:

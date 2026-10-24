@@ -7,6 +7,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import app.modules.activities.models  # noqa: F401
 from app.infrastructure.database import SessionLocal
 from app.modules.auth.models import User, UserProfile, UserRole
 from app.modules.auth.security import hash_password
@@ -945,9 +946,311 @@ def seed_course_c_personal_productivity(
     )
 
 
+def seed_phase5_activities(db: Session) -> None:
+    """Idempotently seed representative Phase 5 interactive activities across the 3 course tracks."""
+    from app.modules.activities.models import Activity, ActivityType, GradingConfig, GradingType
+    from app.modules.courses.models import Lesson, LessonBlock
+
+    logger.info("Seeding Phase 5 interactive activities across course tracks...")
+
+    activities_spec = [
+        # ── 1. Web Development Foundations ─────────────────────────────────
+        {
+            "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "activity_type": ActivityType.SINGLE_CHOICE.value,
+            "title": "HTML5 Primary Landmark",
+            "instructions": "Select the correct semantic element that represents the unique, dominant content of the document body.",
+            "configuration": {
+                "options": [
+                    {"id": "opt-main", "text": "<main> — the dominant content landmark"},
+                    {"id": "opt-div", "text": "<div id='content'> — a non-semantic generic container"},
+                    {"id": "opt-article", "text": "<article> — self-contained syndicatable composition"},
+                    {"id": "opt-section", "text": "<section> — generic standalone thematic section"},
+                ]
+            },
+            "max_attempts": 3,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {"correct_option_id": "opt-main"},
+            "feedback_config": {
+                "summary": "<main> represents the dominant content of the <body> and must only appear once per page without hidden attribute.",
+                "explanations": {
+                    "opt-main": "Correct! <main> is the authoritative landmark for assistive technologies and search crawlers.",
+                    "opt-div": "Incorrect. <div> has no semantic meaning in the accessibility tree.",
+                },
+            },
+        },
+        {
+            "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "activity_type": ActivityType.MULTIPLE_SELECT.value,
+            "title": "Accessible Document Landmark Elements",
+            "instructions": "Select all elements that establish native accessible landmarks in HTML5.",
+            "configuration": {
+                "options": [
+                    {"id": "lm-header", "text": "<header> (banner landmark when top-level)"},
+                    {"id": "lm-nav", "text": "<nav> (navigation landmark)"},
+                    {"id": "lm-main", "text": "<main> (main landmark)"},
+                    {"id": "lm-footer", "text": "<footer> (contentinfo landmark when top-level)"},
+                    {"id": "lm-div", "text": "<div> (generic container)"},
+                    {"id": "lm-span", "text": "<span> (inline phrase container)"},
+                ]
+            },
+            "max_attempts": 3,
+            "sort_order": 2,
+            "passing_score": 70.0,
+            "answer_key": {"correct_option_ids": ["lm-header", "lm-nav", "lm-main", "lm-footer"]},
+            "feedback_config": {
+                "summary": "header, nav, main, and footer provide native landmark roles; div and span are non-semantic.",
+            },
+        },
+        {
+            "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "activity_type": ActivityType.FILL_IN_THE_BLANK.value,
+            "title": "HTML5 Semantic Landmark Elements",
+            "instructions": "Fill in the missing HTML element names in the passage below.",
+            "configuration": {
+                "template": "A standard web document uses the [blank-main] element for dominant unique content, and the [blank-nav] element for navigational link lists.",
+                "blanks": [
+                    {"id": "blank-main", "hint": "<main> or main"},
+                    {"id": "blank-nav", "hint": "<nav> or nav"},
+                ],
+            },
+            "max_attempts": 3,
+            "sort_order": 3,
+            "passing_score": 70.0,
+            "answer_key": {
+                "blanks": {
+                    "blank-main": {
+                        "accepted_answers": ["<main>", "main"],
+                        "case_sensitive": False,
+                    },
+                    "blank-nav": {
+                        "accepted_answers": ["<nav>", "nav"],
+                        "case_sensitive": False,
+                    },
+                }
+            },
+            "feedback_config": {
+                "summary": "<main> isolates primary document content; <nav> isolates navigational menus.",
+                "explanation": "Native semantic HTML elements provide accessible landmarks without requiring redundant ARIA role attributes.",
+            },
+        },
+        {
+            "lesson_slugs": ["forms-and-inputs", "accessible-forms"],
+            "activity_type": ActivityType.CODE_EXERCISE.value,
+            "title": "Accessible Form Input & Label Pair",
+            "instructions": "Write an accessible HTML form input paired with an explicit <label> using matching 'for' and 'id' attributes.",
+            "configuration": {
+                "language": "html",
+                "task_description": "Construct an input of type 'email' with an associated <label> element for screen reader accessibility.",
+                "starter_code": "<form>\n  <!-- Write your label and input here -->\n</form>",
+            },
+            "max_attempts": None,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {"test_cases": []},
+            "feedback_config": {"summary": "Validates explicit label-for pairing for WCAG 2.1 compliance."},
+        },
+        # ── 2. Spoken English and Communication ────────────────────────────
+        {
+            "lesson_slugs": ["bluf-framework", "handling-interruptions", "executive-summary"],
+            "activity_type": ActivityType.SCENARIO.value,
+            "title": "Executive Interruption Decision",
+            "instructions": "Evaluate the meeting situation and choose the optimal communication strategy.",
+            "configuration": {
+                "scenario_text": "During an executive presentation, a VP interrupts slide 2: 'What is the projected timeline slippage and the mitigation cost?'",
+                "decisions": [
+                    {
+                        "id": "dec-bluf",
+                        "title": "Bottom Line Up Front (BLUF) Answer",
+                        "description": "Answer directly: 'We project a 2-week slip and $15,000 mitigation cost. Here are the two key drivers.'",
+                    },
+                    {
+                        "id": "dec-defer",
+                        "title": "Defer until Slide 8",
+                        "description": "Request that they hold their question until the timeline section later in the deck.",
+                    },
+                    {
+                        "id": "dec-preamble",
+                        "title": "Historical Context First",
+                        "description": "Explain supplier shipment difficulties in detail before delivering the numbers.",
+                    },
+                ],
+            },
+            "max_attempts": 2,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {
+                "best_decision_id": "dec-bluf",
+                "acceptable_decision_ids": [],
+            },
+            "feedback_config": {
+                "summary": "Executives value direct answers first (BLUF). Deferring or giving long preambles breeds impatience.",
+            },
+        },
+        {
+            "lesson_slugs": ["star-framework", "star-method"],
+            "activity_type": ActivityType.ORDERING.value,
+            "title": "STAR Response Methodology Sequence",
+            "instructions": "Arrange the four components of a behavioral interview answer in chronological order.",
+            "configuration": {
+                "items": [
+                    {"id": "star-s", "text": "Situation: Establish the context, challenge, and stakeholders."},
+                    {"id": "star-t", "text": "Task: Clarify your explicit responsibility and objective."},
+                    {"id": "star-a", "text": "Action: Detail the specific initiatives YOU executed."},
+                    {"id": "star-r", "text": "Result: Quantify the outcome, metrics improved, and lessons learned."},
+                ]
+            },
+            "max_attempts": 3,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {"correct_order": ["star-s", "star-t", "star-a", "star-r"]},
+            "feedback_config": {
+                "summary": "STAR proceeds linearly from context (S) to goal (T) to personal action (A) to quantified impact (R).",
+            },
+        },
+        # ── 3. Personal Productivity ───────────────────────────────────────
+        {
+            "lesson_slugs": ["high-leverage-outcomes"],
+            "activity_type": ActivityType.MATCHING.value,
+            "title": "Eisenhower Matrix Quadrant Classification",
+            "instructions": "Match each daily scenario to its proper Eisenhower Matrix quadrant.",
+            "configuration": {
+                "left_items": [
+                    {"id": "task-server", "text": "Production server down during peak business hours"},
+                    {"id": "task-strategy", "text": "Quarterly skill acquisition and deep system design"},
+                    {"id": "task-phone", "text": "Unscheduled vendor phone call on non-urgent tools"},
+                    {"id": "task-browse", "text": "Compulsive social media scrolling when fatigued"},
+                ],
+                "right_items": [
+                    {"id": "quad-1", "text": "Quadrant 1: Urgent & Important (Do First)"},
+                    {"id": "quad-2", "text": "Quadrant 2: Not Urgent & Important (Schedule & Protect)"},
+                    {"id": "quad-3", "text": "Quadrant 3: Urgent & Not Important (Delegate/Decline)"},
+                    {"id": "quad-4", "text": "Quadrant 4: Not Urgent & Not Important (Eliminate)"},
+                ],
+            },
+            "max_attempts": 3,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {
+                "pairs": {
+                    "task-server": "quad-1",
+                    "task-strategy": "quad-2",
+                    "task-phone": "quad-3",
+                    "task-browse": "quad-4",
+                }
+            },
+            "feedback_config": {
+                "summary": "Quadrant 2 is the core driver of long-term leverage; Quadrant 1 requires immediate execution.",
+            },
+        },
+        {
+            "lesson_slugs": ["calendar-timeblocking"],
+            "activity_type": ActivityType.TRUE_FALSE.value,
+            "title": "Cognitive Context-Switching Principle",
+            "instructions": "Evaluate whether the statement is true or false based on attention science.",
+            "configuration": {
+                "statement": "Switching attention back and forth between deep programming and email alerts incurs no cognitive residue penalty."
+            },
+            "max_attempts": 2,
+            "sort_order": 1,
+            "passing_score": 70.0,
+            "answer_key": {"correct_boolean": False},
+            "feedback_config": {
+                "explanation": "False. Dr. Sophie Leroy's attention residue research proves that cognitive switching leaves residual focus on the prior task, significantly degrading accuracy.",
+            },
+        },
+        {
+            "lesson_slugs": ["calendar-timeblocking"],
+            "activity_type": ActivityType.SHORT_ANSWER.value,
+            "title": "Focus Scheduling Technique",
+            "instructions": "Enter the term used for allocating uninterrupted calendar slots to dedicated high-leverage tasks.",
+            "configuration": {
+                "prompt": "What scheduling practice dedicates sacred focus blocks to specific priorities on your calendar?",
+                "placeholder": "e.g., time blocking",
+                "max_length": 100,
+            },
+            "max_attempts": 3,
+            "sort_order": 2,
+            "passing_score": 70.0,
+            "answer_key": {
+                "accepted_answers": ["time blocking", "time-blocking", "timeboxing", "time boxing"],
+                "case_sensitive": False,
+            },
+            "feedback_config": {
+                "explanation": "'Time blocking' or 'timeboxing' is the gold standard for protecting focus windows against reactive calendar drift.",
+            },
+        },
+    ]
+
+    for spec in activities_spec:
+        # Find matching lessons across courses (might be in multiple versions/modules)
+        target_slugs = spec.get("lesson_slugs") or [spec["lesson_slug"]]
+        lessons = db.scalars(select(Lesson).where(Lesson.slug.in_(target_slugs))).all()
+        if not lessons:
+            logger.warning("No lesson found with slugs %s", target_slugs)
+            continue
+
+        for lesson in lessons:
+            # Check if activity already exists for this lesson
+            existing_act = db.scalars(
+                select(Activity).where(Activity.lesson_id == lesson.id, Activity.title == spec["title"])
+            ).first()
+
+            if not existing_act:
+                act = Activity(
+                    lesson_id=lesson.id,
+                    activity_type=spec["activity_type"],
+                    title=spec["title"],
+                    instructions=spec["instructions"],
+                    configuration=spec["configuration"],
+                    max_attempts=spec.get("max_attempts"),
+                    sort_order=spec.get("sort_order", 0),
+                )
+                db.add(act)
+                db.flush()
+
+                cfg = GradingConfig(
+                    activity_id=act.id,
+                    grading_type=GradingType.AUTOMATED.value,
+                    passing_score=spec.get("passing_score", 70.0),
+                    answer_key=spec["answer_key"],
+                    feedback_config=spec.get("feedback_config"),
+                )
+                db.add(cfg)
+                db.flush()
+
+                # Add LessonBlock if not present
+                existing_block = db.scalars(
+                    select(LessonBlock).where(
+                        LessonBlock.lesson_id == lesson.id,
+                        LessonBlock.block_type == "activity",
+                    )
+                ).all()
+
+                has_block = any(b.content.get("activity_id") == act.id for b in existing_block)
+                if not has_block:
+                    sort_order = len(lesson.blocks) + 1
+                    block = LessonBlock(
+                        lesson_id=lesson.id,
+                        block_type="activity",
+                        content={
+                            "activity_id": act.id,
+                            "title": act.title,
+                            "instructions": act.instructions,
+                        },
+                        sort_order=sort_order,
+                    )
+                    db.add(block)
+
+                logger.info("Attached Activity '%s' to lesson '%s'", act.title, lesson.slug)
+
+    db.commit()
+
+
 def run_seed() -> None:
     """Execute complete idempotent seed."""
-    logger.info("Starting SkillVerse Phase 3 Database Seeding...")
+    logger.info("Starting SkillVerse Database Seeding...")
     db = SessionLocal()
     try:
         creator = get_or_create_seed_creator(db)
@@ -967,8 +1270,11 @@ def run_seed() -> None:
         seed_course_b_spoken_english(db, creator.id, comm_disc.id, skill_map)
         seed_course_c_personal_productivity(db, creator.id, prod_disc.id, skill_map)
 
+        # Seed Phase 5 representative interactive activities
+        seed_phase5_activities(db)
+
         logger.info(
-            "Database Seeding Completed Successfully! All 3 courses and taxonomy initialized."
+            "Database Seeding Completed Successfully! All 3 courses, taxonomy, and activities initialized."
         )
     finally:
         db.close()

@@ -72,7 +72,7 @@ export interface ApiSkillTaxonomyMapResponse {
 
 export interface ApiLessonBlock {
   id: string
-  block_type: 'heading' | 'text' | 'list' | 'code_example' | 'callout' | 'image' | 'video'
+  block_type: 'heading' | 'text' | 'list' | 'code_example' | 'callout' | 'image' | 'video' | 'activity'
   content: Record<string, unknown>
   sort_order: number
 }

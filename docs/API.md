@@ -662,60 +662,152 @@ Mark lesson as completed.
 
 ---
 
-## Activity Attempts & Submissions
+## Activity Attempts & Interactive Assessments (Phase 5 Implemented)
 
-### `GET /api/v1/activities/{activity_id}` 🔓
-Activity detail: type, instructions, configuration (starter code, question structure).
-- Sensitive configuration (test case expected outputs, rubric answers) is **not** included.
+### `GET /api/v1/activities/{activity_id}` 🌐
+Retrieve public activity definition.
+- **Security Invariant:** Confidential answer keys (`answer_key`), hidden test cases, and internal rubric solutions are strictly stripped on the server before delivery.
 
-### `POST /api/v1/activities/{activity_id}/attempts` 🔓
-Submit an attempt.
 ```json
-// Code exercise
-{ "submission": { "code": "function add(a,b) { return a+b; }", "language": "javascript" } }
-
-// Quiz
-{ "submission": { "answers": [{ "question_id": "q1", "answer": "B" }] } }
-
-// Conversation practice
-{ "submission": { "responses": [{ "prompt_id": "p1", "audio_url": "...", "transcript": "..." }] } }
-
-// Practical task
-{ "submission": { "response": "My analysis of the scenario...", "decisions": [...] } }
-```
-
-Response (immediate for automated grading):
-```json
-// Response 201
+// Response 200 OK
 {
-  "attempt": {
-    "id": "uuid",
-    "attempt_number": 1,
-    "score": 85.00,
-    "passed": true,
-    "result": { "tests_passed": 4, "tests_total": 5, "details": [...] },
-    "feedback": { "summary": "...", "hints": [...] }
-  }
+  "id": "uuid",
+  "lesson_id": "uuid",
+  "activity_type": "single_choice",
+  "title": "HTML5 Primary Landmark",
+  "instructions": "Select the correct semantic element...",
+  "configuration": {
+    "options": [
+      { "id": "opt-main", "text": "<main> — the dominant content landmark" },
+      { "id": "opt-div", "text": "<div id='content'> — a generic container" }
+    ]
+  },
+  "max_attempts": 3,
+  "sort_order": 1,
+  "passing_score": 70.0,
+  "created_at": "2026-10-24T00:00:00Z",
+  "updated_at": "2026-10-24T00:00:00Z"
 }
 ```
 
-Response (async for AI-graded activities):
+### `GET /api/v1/lessons/{lesson_id}/activities` 🌐 / 🔓
+List all interactive activities configured for a lesson.
+- If unauthenticated, returns activity summaries with `attempts_count: 0`.
+- If authenticated, calculates and returns the current learner's `best_score`, `passed` status, attempt counts, and `can_retry`.
+
 ```json
-// Response 202
-{
-  "attempt": {
+// Response 200 OK
+[
+  {
     "id": "uuid",
-    "attempt_number": 1,
-    "status": "evaluating"
+    "lesson_id": "uuid",
+    "activity_type": "single_choice",
+    "title": "HTML5 Primary Landmark",
+    "instructions": "...",
+    "sort_order": 1,
+    "max_attempts": 3,
+    "passing_score": 70.0,
+    "best_score": 100.0,
+    "passed": true,
+    "attempts_count": 1,
+    "can_retry": true
   }
+]
+```
+
+### `POST /api/v1/activities/{activity_id}/attempts` 🔓
+Submit a learner attempt for server-authoritative grading and recording.
+- **Security Invariants:**
+  - Enforces `max_attempts` limit. Exceeding returns `400 Bad Request` with code `RETRY_LIMIT_EXCEEDED`.
+  - Scores and feedback are calculated strictly on the server; client-provided scores are never trusted.
+  - Submissions are validated deterministically against available activity options/identifiers.
+
+```json
+// Request Payloads by Activity Type:
+
+// 1. Single Choice:
+{ "submission": { "selected_option_id": "opt-main" } }
+
+// 2. Multiple Select:
+{ "submission": { "selected_option_ids": ["lm-header", "lm-main"] } }
+
+// 3. True / False:
+{ "submission": { "selected_boolean": true } }
+
+// 4. Short Answer:
+{ "submission": { "text": "time blocking" } }
+
+// 5. Fill in the Blank:
+{ "submission": { "answers": { "blank1": "nav", "blank2": "main" } } }
+
+// 6. Ordering:
+{ "submission": { "ordered_item_ids": ["star-s", "star-t", "star-a", "star-r"] } }
+
+// 7. Matching:
+{ "submission": { "pairs": { "task-server": "quad-1", "task-strategy": "quad-2" } } }
+
+// 8. Scenario:
+{ "submission": { "selected_decision_id": "dec-bluf" } }
+
+// 9. Code Exercise:
+{ "submission": { "code": "def solve(): return 4", "language": "python" } }
+```
+
+```json
+// Response 201 Created (Deterministic Graded Response)
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "activity_id": "uuid",
+  "attempt_number": 1,
+  "status": "graded",
+  "submission": { "selected_option_id": "opt-main" },
+  "result": { "selected_option_id": "opt-main", "is_correct": true },
+  "score": 100.0,
+  "max_score": 100.0,
+  "passed": true,
+  "feedback": {
+    "is_correct": true,
+    "message": "Correct! Well done.",
+    "explanation": "<main> represents the dominant content of the <body>."
+  },
+  "started_at": "2026-10-24T00:00:00Z",
+  "completed_at": "2026-10-24T00:00:00Z",
+  "can_retry": true,
+  "attempts_remaining": 2
 }
 ```
 
 ### `GET /api/v1/activities/{activity_id}/attempts` 🔓
-List the authenticated user's attempts for this activity.
+Retrieve the current authenticated user's attempt history for this activity, sorted latest first.
+
+```json
+// Response 200 OK
+{
+  "activity_id": "uuid",
+  "total_attempts": 2,
+  "max_attempts": 3,
+  "can_retry": true,
+  "attempts": [
+    {
+      "id": "uuid",
+      "attempt_number": 2,
+      "status": "graded",
+      "score": 100.0,
+      "passed": true,
+      ...
+    }
+  ]
+}
+```
 
 ### `GET /api/v1/activities/{activity_id}/attempts/{attempt_id}` 🔓
-Get a specific attempt's details and results.
+Retrieve details of a specific attempt.
+- **Cross-User Authorization:** Learners can only view their own attempts. Attempts by other users return `403 Forbidden` (`FORBIDDEN`). Admins can inspect any attempt.
+
+### `POST /api/v1/activities` 🔓🛡️ (creator/admin)
+Author a new interactive activity along with its confidential grading configuration.
+- **Answer Key Protection:** The `answer_key` is persisted securely to `grading_configs` and omitted from the returned `ActivityDetailResponse`.
 
 ---
 

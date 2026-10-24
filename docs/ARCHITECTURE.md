@@ -209,9 +209,42 @@ Each module has a clear responsibility and communicates with other modules throu
 - **Published Version Immutability:** Once `published_at` is stamped, that `CourseVersion` and all child `Module`, `Lesson`, and `LessonBlock` records become permanently immutable. Modifying a published course creates or opens an isolated working draft (cloning modules, lessons, and blocks), ensuring earlier published versions are never altered.
 
 #### 3. Structured Lesson Content Model
-- Lessons contain an ordered sequence of typed blocks (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`).
+- Lessons contain an ordered sequence of typed blocks (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`, `activity`).
 - Content is stored as validated data interpreted by the client renderer (never raw executable JavaScript or unchecked HTML).
 - Rich-text markdown is sanitized with script stripping; video embeds are restricted to whitelisted streaming providers.
+
+### Phase 5 Domain Architecture (Interactive Activity and Assessment Engine)
+
+#### 1. Schema-Driven Activity Data Model & Attempt Tracking
+- **Activity Entity (`Activity`):** Polymorphic, schema-driven assessment model supporting 9 activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario`). Holds public prompt metadata, instructions, options, hints, and optional starter code.
+- **Grading Configuration (`GradingConfig`):** Encapsulates confidential answer keys, target ordering, expected matching pairs, blanks, test cases, passing score thresholds, and max attempts. **Strictly segregated** from public activity endpoints to prevent client-side answer sniffing.
+- **Learner Attempt (`Attempt`):** Immutable audit record tracking user submissions, submitted payloads, server-computed score, pass/fail status, detailed criteria feedback, duration in seconds, and attempt sequence number (`attempt_number`). Enforces unique attempt sequence per user and activity (`uq_user_activity_attempt`).
+
+#### 2. Server-Authoritative Evaluation Lifecycle & Grading Dispatcher
+All grading is calculated strictly on the backend via `GradingEngine` (`backend/app/modules/activities/grading.py`). The client is never trusted to calculate scores or determine pass/fail states:
+1. **Validation & Attempt Verification:** `ActivityService.submit_attempt` verifies user authentication and active retry allowance (`attempt_number <= max_attempts`). If maximum retries have been exhausted, submission is rejected with `400 Maximum attempts reached`.
+2. **Type Dispatch:** `GradingEngine.grade` routes the submission payload and grading configuration to specialized, deterministic grading algorithms:
+   - `single_choice`, `true_false`: Exact match with constant-time comparison.
+   - `multiple_select`: Partial credit supported or strict exact set matching based on `allow_partial`.
+   - `short_answer`: Whitespace-stripped, case-insensitive comparison with alternative acceptable answers.
+   - `fill_in_the_blank`: Positional and named token matching with token-level tolerance.
+   - `ordering`: Sequence accuracy based on Spearman/Kendall rank or item position match.
+   - `matching`: Association correctness comparing key-value tuples.
+   - `scenario`: Multi-criteria rubric matching against structured learner submissions.
+   - `code_exercise`: Unit test verification executed via the isolated sandbox runner.
+3. **Response Sanitization:** When delivering activity definitions to learners via `GET /api/v1/activities/{id}` or `GET /api/v1/lessons/{id}/activities`, the service layer explicitly strips all grading configs, answer keys, solutions, and hidden test cases, returning only sanitized `ActivityResponse` payloads.
+
+#### 3. Safe Code Execution Sandbox Boundary
+SkillVerse strictly prohibits running learner-submitted code in the main API or database processes:
+- **Sandbox Runner Interface (`SandboxRunnerInterface`):** An abstract boundary (`backend/app/infrastructure/sandbox/runner.py`) decoupling assessment services from execution backends.
+- **Worker & Container Isolation:** In production, code execution requests are dispatched to a message queue and processed by an isolated, non-root Docker sandbox worker with hard cgroup constraints: 10s CPU limit, 256MB memory cap, 10MB disk cap, and disabled outbound networking (`--network none`).
+- **Safe Fallback Runner:** When container workers are unconfigured, `IsolatedSandboxRunner` safely records attempts in a `SUBMITTED` state with clear diagnostic guidance rather than executing arbitrary untrusted code via host `exec()` or `eval()`.
+
+#### 4. Lesson Workspace Integration
+Activities are seamlessly woven into the learning flow through two complementary modalities:
+- **Inline Activity Blocks:** Represented by `ActivityBlockData` (`block_type = "activity"`) within `LessonBlock`, allowing creators to place interactive exercises directly between instructional paragraphs.
+- **Lesson Checkpoint Activities:** Standalone activities linked to a lesson via `lesson_id` automatically surfaced in the workspace footer under "Interactive Assessment Checkpoint", prompting learners to demonstrate mastery before proceeding to the next lesson.
+
 
 ---
 
@@ -380,4 +413,13 @@ API ← Poll / webhook for result
 ### ADR-007: Universal Cross-Disciplinary Content Block Renderer
 **Decision:** Use a single, unified block-dispatch lesson rendering system for all disciplines instead of maintaining separate custom viewers for coding, spoken English, or productivity.
 **Rationale:** Maintaining distinct renderers for different subject areas leads to code duplication, inconsistent keyboard accessibility, divergent visual aesthetics, and high maintenance overhead. A schema-driven block model (`heading`, `text`, `list`, `code_example`, `callout`, `image`, `video`) provides full expressive capability across coding and non-coding domains while guaranteeing WCAG 2.2 accessibility, responsive behavior, and robust security sandboxing across the entire curriculum.
+
+### ADR-008: Server-Authoritative Grading & Answer Key Confidentiality
+**Decision:** All evaluation, scoring, retry validation, and feedback generation must occur exclusively on the backend server. Answer keys, correct option IDs, expected blanks, and test case assertions must never be transmitted in learner-facing API payloads.
+**Rationale:** Client-side grading allows learners to inspect DOM state or network responses to trivially obtain solutions without demonstrating competence. Stripping grading configurations at the service boundary guarantees integrity while ensuring learners receive authoritative, tamper-proof grading records and diagnostic feedback.
+
+### ADR-009: Strict Code Execution Sandbox Boundary
+**Decision:** Learner-submitted code must never be executed within the main FastAPI application or host worker processes (strictly forbidding `eval()`, `exec()`, or direct host subprocess invocation). All code execution is isolated behind an explicit `SandboxRunnerInterface` that dispatches jobs to disposable, resource-constrained container environments.
+**Rationale:** Untrusted learner code can attempt denial-of-service (CPU spinning, fork bombs, memory exhaustion), unauthorized network access (data exfiltration, SSRF), or filesystem compromise. Decoupling code execution behind an isolated runner boundary ensures platform resilience and system security.
+
 

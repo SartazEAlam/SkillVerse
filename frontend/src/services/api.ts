@@ -39,16 +39,45 @@ export const tokenStorage = {
   },
 }
 
-let isRefreshing = false
-let refreshSubscribers: ((token: string) => void)[] = []
+let refreshPromise: Promise<string> | null = null
 
-function subscribeTokenRefresh(cb: (token: string) => void) {
-  refreshSubscribers.push(cb)
-}
+async function refreshToken(): Promise<string> {
+  if (refreshPromise) {
+    return refreshPromise
+  }
 
-function onRefreshed(token: string) {
-  refreshSubscribers.forEach((cb) => cb(token))
-  refreshSubscribers = []
+  refreshPromise = (async () => {
+    try {
+      const refreshTokenValue = tokenStorage.getRefreshToken()
+      if (!refreshTokenValue) {
+        throw new ApiError('No refresh token available.', 'UNAUTHORIZED', 401)
+      }
+
+      const refreshResp = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshTokenValue }),
+      })
+
+      if (!refreshResp.ok) {
+        tokenStorage.clearTokens()
+        window.dispatchEvent(new Event('auth:unauthorized'))
+        throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401)
+      }
+
+      const authData: AuthResponse = await refreshResp.json()
+      tokenStorage.setTokens(authData.access_token, authData.refresh_token)
+      return authData.access_token
+    } catch (err) {
+      tokenStorage.clearTokens()
+      window.dispatchEvent(new Event('auth:unauthorized'))
+      throw err
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
 }
 
 export async function request<T>(
@@ -69,48 +98,16 @@ export async function request<T>(
 
   let response = await fetch(url, { ...options, headers })
 
-  // Handle 401 Unauthorized -> Attempt token refresh
-  if (response.status === 401 && tokenStorage.getRefreshToken() && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
-    if (!isRefreshing) {
-      isRefreshing = true
-      try {
-        const refreshResp = await fetch(`${API_BASE}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: tokenStorage.getRefreshToken() }),
-        })
-
-        if (refreshResp.ok) {
-          const authData: AuthResponse = await refreshResp.json()
-          tokenStorage.setTokens(authData.access_token, authData.refresh_token)
-          isRefreshing = false
-          onRefreshed(authData.access_token)
-        } else {
-          isRefreshing = false
-          tokenStorage.clearTokens()
-          window.dispatchEvent(new Event('auth:unauthorized'))
-          throw new ApiError('Session expired. Please log in again.', 'UNAUTHORIZED', 401)
-        }
-      } catch (err) {
-        isRefreshing = false
-        tokenStorage.clearTokens()
-        window.dispatchEvent(new Event('auth:unauthorized'))
-        throw err
-      }
-    }
-
-    // Wait for the new token and retry
-    const retryPromise = new Promise<T>((resolve, reject) => {
-      subscribeTokenRefresh((newToken) => {
-        headers.set('Authorization', `Bearer ${newToken}`)
-        fetch(url, { ...options, headers })
-          .then((res) => res.json())
-          .then(resolve)
-          .catch(reject)
-      })
-    })
-
-    return retryPromise
+  // Handle 401 Unauthorized -> Attempt token refresh and retry
+  if (
+    response.status === 401 &&
+    tokenStorage.getRefreshToken() &&
+    !endpoint.includes('/auth/refresh') &&
+    !endpoint.includes('/auth/login')
+  ) {
+    const newToken = await refreshToken()
+    headers.set('Authorization', `Bearer ${newToken}`)
+    response = await fetch(url, { ...options, headers })
   }
 
   // Parse response

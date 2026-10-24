@@ -59,6 +59,24 @@ def get_current_user(
     return user
 
 
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Extract current user if valid bearer token is present, else None."""
+    if credentials is None:
+        return None
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id: str | None = payload.get("sub")
+        if not user_id:
+            return None
+        auth_service = AuthService(db)
+        return auth_service.get_user_by_id(user_id)
+    except Exception:
+        return None
+
+
 def require_creator_or_admin(current_user: User = Depends(get_current_user)) -> User:
     """Enforce that the authenticated user has creator or admin privileges."""
     from app.modules.auth.models import UserRole

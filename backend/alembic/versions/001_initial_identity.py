@@ -19,9 +19,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Create user_role enum
-    user_role_enum = sa.Enum("learner", "creator", "admin", name="user_role", create_type=True)
-    user_role_enum.create(op.get_bind(), checkfirst=True)
+    # user_role enum is created automatically during op.create_table
+    user_role_enum = sa.Enum("learner", "creator", "admin", name="user_role")
 
     # ── users table ──────────────────────────────────
     op.create_table(

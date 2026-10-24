@@ -4,6 +4,7 @@ Reads the database URL from app settings and configures
 metadata autogeneration from SQLAlchemy models.
 """
 
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -26,8 +27,9 @@ from app.modules.skills.models import Discipline, Skill, SkillPrerequisite  # no
 
 config = context.config
 
-# Override sqlalchemy.url from application settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Override sqlalchemy.url from environment or application settings
+database_url = os.environ.get("DATABASE_URL") or settings.database_url
+config.set_main_option("sqlalchemy.url", database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

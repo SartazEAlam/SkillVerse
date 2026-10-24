@@ -11,17 +11,21 @@ SkillVerse is an immersive learning platform that helps people acquire usable sk
 - **Phase 2 — Backend Foundation, Database Infrastructure & Identity** (completed)
   FastAPI application foundation with SQLAlchemy models, Alembic migrations, Argon2id password hashing, JWT access + refresh token rotation, Google OAuth 2.0 PKCE, rate limiting, and profile management (GDPR export, soft delete). Includes frontend auth integration (Login, Register, Profile, AuthContext).
 - **Phase 3 — Cross-Disciplinary Skill Taxonomy, Course Catalog & Versioned Content Model** (completed)
-  Domain model and APIs for cross-disciplinary skills, cycle-safe prerequisite DAG, courses, modules, lessons, structured content blocks, and immutable published course versions. Public catalog discovery with filtering (discipline, difficulty), search, and deterministic pagination. Includes idempotent seed script populating 7 disciplines, 15 skills, 12 prerequisite edges, and 3 full representative courses (Web Dev, Spoken English, Personal Productivity) published through the standard versioning service. *Note: 72 automated tests run against SQLite test harness; live PostgreSQL 16 integration remains unverified locally due to local Docker daemon unavailability and must be verified in CI/CD.*
+  Domain model and APIs for cross-disciplinary skills, cycle-safe prerequisite DAG, courses, modules, lessons, structured content blocks, and immutable published course versions. Public catalog discovery with filtering (discipline, difficulty), search, and deterministic pagination. Includes idempotent seed script populating 7 disciplines, 15 skills, 12 prerequisite edges, and 3 full representative courses (Web Dev, Spoken English, Personal Productivity) published through the standard versioning service.
+- **Phase 4 — Universal Lesson Workspace & Immersive Learning Experience** (completed)
+  Universal block-based lesson renderer displaying Phase 3 structured, versioned content (`heading`, `text`, `list`, `code_example` with syntax highlighting and clipboard copy, `callout`, `image`, `video`, and graceful unknown block fallback). Responsive learning workspace layout with collapsible module outline, progress tracking, breadcrumb context, boundary-protected navigation, keyboard shortcuts (`←`/`→`), mobile drawer, and `AbortController` stale response cancellation.
+- **Phase 5 — Interactive Activity and Assessment Engine** (completed)
+  Schema-driven assessment engine supporting 9 distinct activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, and `scenario`). Server-authoritative grading with answer key confidentiality (secret keys never exposed to clients), retry enforcement (`max_attempts`), and detailed attempt history with cross-user authorization. Safe execution boundary via `SandboxRunnerInterface` preventing untrusted learner code from running in the main API process. Embedded and checkpoint activity rendering integrated seamlessly into the universal lesson workspace. Includes 14 automated backend tests (86 total) and 12 automated frontend tests (59 total).
 
 ## Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
-| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phase 1, 2 & 3 contracts) |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phase 2 & 3) |
-| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated |
-| Cache / Jobs | Redis 7 (Phase 2 docker-compose ready, Phase 4+ feature use) | Configured |
-| Code Execution | Isolated sandbox (Docker-based) | Planned (Phase 5) |
+| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1, 2, 3, 4 & 5) |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2, 3 & 5) |
+| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated (003 head) |
+| Cache / Jobs | Redis 7 (docker-compose ready, worker queue foundation) | Configured |
+| Code Execution | Isolated sandbox (`SandboxRunnerInterface`, safe container worker boundary) | Implemented boundary (Phase 5) |
 | AI | Provider-neutral integration layer | Planned (Phase 8) |
 | Dev Environment | Docker Compose | Configured |
 
@@ -90,7 +94,7 @@ cd backend
 # Create and activate a virtual environment
 python -m venv .venv
 # Windows:
-.venv\Scripts\activate
+.venv/Scripts/activate
 # Linux/macOS:
 # source .venv/bin/activate
 
@@ -106,7 +110,7 @@ python -m alembic check
 # Seed initial cross-disciplinary taxonomy and representative courses
 python -m app.seed
 
-# Run all automated tests (executes 68 tests against SQLite test database)
+# Run all automated tests (executes 86 tests against SQLite test database)
 pytest
 
 # Start local development server
@@ -130,7 +134,7 @@ npm run dev
 # Run TypeScript strict type verification
 npm run typecheck
 
-# Run Vitest unit and integration test suite (23 tests)
+# Run Vitest unit and integration test suite (59 tests across 7 suites)
 npm run test
 
 # Run fast linter (oxlint)

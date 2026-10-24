@@ -20,6 +20,7 @@ class BlockType(enum.StrEnum):
     CALLOUT = "callout"
     IMAGE = "image"
     VIDEO = "video"
+    ACTIVITY = "activity"
 
 
 # ── Content Sanitization Helpers ───────────────────────
@@ -208,6 +209,14 @@ class VideoBlockData(BaseModel):
         return url
 
 
+class ActivityBlockData(BaseModel):
+    """Activity block: interactive assessment checkpoint embedded in a lesson."""
+
+    activity_id: str = Field(min_length=1, max_length=100, description="Referenced Activity UUID")
+    title: str | None = Field(default=None, max_length=300, description="Optional activity title override")
+    instructions: str | None = Field(default=None, description="Optional instructions override")
+
+
 # ── Generic Block Container ────────────────────────────
 
 
@@ -234,6 +243,7 @@ class LessonBlock(BaseModel):
             BlockType.CALLOUT: CalloutBlockData,
             BlockType.IMAGE: ImageBlockData,
             BlockType.VIDEO: VideoBlockData,
+            BlockType.ACTIVITY: ActivityBlockData,
         }
 
         schema_cls = type_map.get(block_type)

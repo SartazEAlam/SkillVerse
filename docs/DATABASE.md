@@ -230,26 +230,28 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 #### `activities`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Activity identifier |
-| lesson_id | UUID | FK → lessons.id, NOT NULL | Parent lesson |
-| activity_type | VARCHAR(50) | NOT NULL | 'code_exercise', 'quiz', 'conversation', 'practical_task' |
-| title | VARCHAR(300) | NOT NULL | Activity title |
-| instructions | TEXT | NOT NULL | Activity instructions (markdown) |
-| configuration | JSONB | NOT NULL | Type-specific config (starter code, test cases, rubric, etc.) |
-| max_attempts | INTEGER | NULLABLE | NULL = unlimited |
-| sort_order | INTEGER | NOT NULL | Order within lesson |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| id | UUID (CHAR(36)) | PK | Unique activity identifier |
+| lesson_id | UUID (CHAR(36)) | FK → lessons.id, NULLABLE, ON DELETE CASCADE | Associated lesson (indexed) |
+| activity_type | VARCHAR(50) | NOT NULL | Type: `single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario` |
+| title | VARCHAR(300) | NOT NULL | Activity display title |
+| instructions | TEXT | NOT NULL | Task instructions and learner prompt |
+| configuration | JSON / JSONB | NOT NULL, DEFAULT '{}' | Sanitized public configuration (options, items, statements, starter code) |
+| max_attempts | INTEGER | NULLABLE | Max allowed submissions (NULL = unlimited) |
+| sort_order | INTEGER | NOT NULL, DEFAULT 0 | Sorting order within lesson |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Active flag for soft deletion/archival |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Activity creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `grading_configs`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| activity_id | UUID | PK, FK → activities.id | One-to-one with activity |
-| grading_type | VARCHAR(50) | NOT NULL | 'automated', 'ai_assisted', 'rubric', 'completion' |
-| passing_score | DECIMAL(5,2) | NOT NULL, DEFAULT 70.00 | Minimum score to pass (%) |
-| rubric | JSONB | NULLABLE | Evaluation rubric for AI/manual grading |
-| test_cases | JSONB | NULLABLE | Automated test definitions |
-| feedback_config | JSONB | NULLABLE | Hint levels, feedback templates |
+| activity_id | UUID (CHAR(36)) | PK, FK → activities.id, ON DELETE CASCADE | One-to-one with parent activity |
+| grading_type | VARCHAR(50) | NOT NULL, DEFAULT 'automated' | `automated`, `ai_assisted`, `rubric`, `completion` |
+| passing_score | FLOAT | NOT NULL, DEFAULT 70.0 | Passing threshold percentage (0.0–100.0) |
+| answer_key | JSON / JSONB | NOT NULL, DEFAULT '{}' | **Confidential server-authoritative key** (never exposed in public API) |
+| rubric | JSON / JSONB | NULLABLE | Criteria definitions for subjective/manual review |
+| test_cases | JSON / JSONB | NULLABLE | Sandbox test cases for code execution |
+| feedback_config | JSON / JSONB | NULLABLE | Explanations, hints, and feedback messages |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Configuration creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
@@ -285,18 +287,20 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 #### `attempts`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Attempt identifier |
-| user_id | UUID | FK → users.id, NOT NULL | Attempting learner |
-| activity_id | UUID | FK → activities.id, NOT NULL | Target activity |
-| attempt_number | INTEGER | NOT NULL | Sequential attempt number |
-| submission | JSONB | NOT NULL | What the learner submitted |
-| result | JSONB | NULLABLE | Evaluation result (null = pending) |
-| score | DECIMAL(5,2) | NULLABLE | Score achieved (%) |
-| passed | BOOLEAN | NULLABLE | Whether passing threshold met |
-| feedback | JSONB | NULLABLE | Structured feedback |
-| started_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| completed_at | TIMESTAMPTZ | NULLABLE | |
-| | | UNIQUE(user_id, activity_id, attempt_number) | |
+| id | UUID (CHAR(36)) | PK | Unique attempt identifier |
+| user_id | UUID (CHAR(36)) | FK → users.id, NOT NULL, ON DELETE CASCADE | Submitting learner (indexed) |
+| activity_id | UUID (CHAR(36)) | FK → activities.id, NOT NULL, ON DELETE CASCADE | Target activity (indexed) |
+| attempt_number | INTEGER | NOT NULL | Sequential attempt counter (1, 2, ...) |
+| status | VARCHAR(50) | NOT NULL, DEFAULT 'graded' | `in_progress`, `submitted`, `graded`, `review_required` |
+| submission | JSON / JSONB | NOT NULL, DEFAULT '{}' | Untrusted learner submission payload |
+| result | JSON / JSONB | NULLABLE | Server-calculated evaluation result |
+| score | FLOAT | NULLABLE | Score achieved percentage (0.0–100.0) |
+| max_score | FLOAT | NOT NULL, DEFAULT 100.0 | Maximum potential score |
+| passed | BOOLEAN | NULLABLE | Pass threshold achievement status |
+| feedback | JSON / JSONB | NULLABLE | Server-authoritative learner feedback & breakdown |
+| started_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Attempt start timestamp |
+| completed_at | TIMESTAMPTZ | NULLABLE | Evaluation completion timestamp |
+| | | UNIQUE(user_id, activity_id, attempt_number) | Strict sequential attempt uniqueness |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 

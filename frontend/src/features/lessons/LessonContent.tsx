@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Clock,
@@ -8,9 +8,13 @@ import {
   ArrowLeft,
   Compass,
   Target,
+  Sparkles,
 } from 'lucide-react'
 import type { ApiLessonDetail } from '../../types/catalog'
 import type { FlattenedLesson } from '../../types/lesson'
+import type { ActivitySummary } from '../../types/activity'
+import { fetchLessonActivities } from '../../services/activityApi'
+import { ActivityContainer } from '../activities/ActivityContainer'
 import { LessonRenderer } from './LessonRenderer'
 import { Button } from '../../components/ui/Button'
 
@@ -29,6 +33,33 @@ export const LessonContent: React.FC<LessonContentProps> = ({
   prevLesson,
   nextLesson,
 }) => {
+  const [activities, setActivities] = useState<ActivitySummary[]>([])
+
+  useEffect(() => {
+    let isMounted = true
+    if (lesson?.id) {
+      fetchLessonActivities(lesson.id)
+        .then((data) => {
+          if (isMounted) setActivities(data)
+        })
+        .catch(() => {
+          if (isMounted) setActivities([])
+        })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [lesson?.id])
+
+  // Identify activities already rendered inside lesson.blocks
+  const embeddedActivityIds = new Set(
+    (lesson.blocks || [])
+      .filter((b) => b.block_type === 'activity')
+      .map((b) => (b.content as any)?.activity_id)
+      .filter(Boolean)
+  )
+
+  const standaloneActivities = activities.filter((a) => !embeddedActivityIds.has(a.id))
   const learningObjectives = lesson.learning_objectives || []
 
   return (
@@ -92,6 +123,21 @@ export const LessonContent: React.FC<LessonContentProps> = ({
       <section aria-label="Lesson content">
         <LessonRenderer blocks={lesson.blocks || []} />
       </section>
+
+      {/* Interactive Assessment Activities (if not already embedded in blocks) */}
+      {standaloneActivities.length > 0 && (
+        <section aria-label="Lesson interactive activities" className="space-y-6 pt-4 border-t border-border-subtle">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-accent-violet" />
+            <h2 className="text-xl font-extrabold text-text-primary tracking-tight">
+              Interactive Assessment Checkpoint
+            </h2>
+          </div>
+          {standaloneActivities.map((act) => (
+            <ActivityContainer key={act.id} activityId={act.id} />
+          ))}
+        </section>
+      )}
 
       {/* Bottom Navigation & Controls */}
       <footer className="pt-8 border-t border-border-subtle/80 space-y-6">

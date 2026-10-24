@@ -8,6 +8,7 @@ import type {
   CalloutBlockContent,
   ImageBlockContent,
   VideoBlockContent,
+  ActivityBlockContent,
 } from '../../types/lesson'
 import { HeadingBlock } from './blocks/HeadingBlock'
 import { TextBlock } from './blocks/TextBlock'
@@ -16,6 +17,7 @@ import { CodeExampleBlock } from './blocks/CodeExampleBlock'
 import { CalloutBlock } from './blocks/CalloutBlock'
 import { ImageBlock } from './blocks/ImageBlock'
 import { VideoBlock } from './blocks/VideoBlock'
+import { ActivityBlock } from './blocks/ActivityBlock'
 import { UnknownBlock } from './blocks/UnknownBlock'
 
 interface LessonRendererProps {
@@ -86,6 +88,13 @@ export const LessonRenderer: React.FC<LessonRendererProps> = ({ blocks = [] }) =
                 <VideoBlock
                   key={block.id}
                   content={block.content as unknown as VideoBlockContent}
+                />
+              )
+            case 'activity':
+              return (
+                <ActivityBlock
+                  key={block.id}
+                  content={block.content as unknown as ActivityBlockContent}
                 />
               )
             default:

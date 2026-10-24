@@ -21,19 +21,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-
-    # Create enums
-    skill_difficulty_enum = sa.Enum("FOUNDATIONAL", "INTERMEDIATE", "ADVANCED", name="skill_difficulty", create_type=True)
-    skill_difficulty_enum.create(bind, checkfirst=True)
-
+    # Enums are created automatically during op.create_table
+    skill_difficulty_enum = sa.Enum("FOUNDATIONAL", "INTERMEDIATE", "ADVANCED", name="skill_difficulty")
     course_difficulty_enum = sa.Enum(
-        "BEGINNER", "INTERMEDIATE", "ADVANCED", name="course_difficulty", create_type=True
+        "BEGINNER", "INTERMEDIATE", "ADVANCED", name="course_difficulty"
     )
-    course_difficulty_enum.create(bind, checkfirst=True)
-
-    course_status_enum = sa.Enum("DRAFT", "PUBLISHED", "ARCHIVED", name="course_status", create_type=True)
-    course_status_enum.create(bind, checkfirst=True)
+    course_status_enum = sa.Enum("DRAFT", "PUBLISHED", "ARCHIVED", name="course_status")
 
     # ── disciplines table ────────────────────────────
     op.create_table(
