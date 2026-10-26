@@ -15,15 +15,17 @@ SkillVerse is an immersive learning platform that helps people acquire usable sk
 - **Phase 4 — Universal Lesson Workspace & Immersive Learning Experience** (completed)
   Universal block-based lesson renderer displaying Phase 3 structured, versioned content (`heading`, `text`, `list`, `code_example` with syntax highlighting and clipboard copy, `callout`, `image`, `video`, and graceful unknown block fallback). Responsive learning workspace layout with collapsible module outline, progress tracking, breadcrumb context, boundary-protected navigation, keyboard shortcuts (`←`/`→`), mobile drawer, and `AbortController` stale response cancellation.
 - **Phase 5 — Interactive Activity and Assessment Engine** (completed)
-  Schema-driven assessment engine supporting 9 distinct activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, and `scenario`). Server-authoritative grading with answer key confidentiality (secret keys never exposed to clients), retry enforcement (`max_attempts`), and detailed attempt history with cross-user authorization. Safe execution boundary via `SandboxRunnerInterface` preventing untrusted learner code from running in the main API process. Embedded and checkpoint activity rendering integrated seamlessly into the universal lesson workspace. Includes 14 automated backend tests (86 total) and 12 automated frontend tests (59 total).
+  Schema-driven assessment engine supporting 9 distinct activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, and `scenario`). Server-authoritative grading with answer key confidentiality (secret keys never exposed to clients), retry enforcement (`max_attempts`), and detailed attempt history with cross-user authorization. Safe execution boundary via `SandboxRunnerInterface` preventing untrusted learner code from running in the main API process. Embedded and checkpoint activity rendering integrated seamlessly into the universal lesson workspace.
+- **Phase 6 — Learner Progression, Enrollments, Skill Mastery & Progress Dashboard** (completed)
+  Full learner progression lifecycle. Authenticated course enrollments bound to immutable course version snapshots (`Enrollment`), with prerequisite DAG validation (`/courses/{slug}/prerequisites`) and duplicate prevention. Durable lesson progress tracking (`LessonProgress`) with server-side gating requiring passed activities. Automated progression cascade (passed assessment attempt triggers lesson start, lesson completion, and overall course completion). Multi-tier, evidence-backed skill mastery system (`SkillMastery`) requiring distinct passed tasks and threshold average scores. Comprehensive learner dashboard (`GET /api/v1/progress/dashboard`) with active enrolled courses, resume learning hero card, skill mastery overview, recent assessment attempts, explainable recommendations, and idempotent achievements (`Achievement`, `UserAchievement`). Dual compatibility across PostgreSQL 16 and SQLite via migration `004_progress_mastery`. Includes 13 automated progression backend tests (106 total) and 3 frontend progress tests (62 total).
 
 ## Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
-| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1, 2, 3, 4 & 5) |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2, 3 & 5) |
-| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated (003 head) |
+| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1–6) |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2–6) |
+| Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated (004 head) |
 | Cache / Jobs | Redis 7 (docker-compose ready, worker queue foundation) | Configured |
 | Code Execution | Isolated sandbox (`SandboxRunnerInterface`, safe container worker boundary) | Implemented boundary (Phase 5) |
 | AI | Provider-neutral integration layer | Planned (Phase 8) |
@@ -107,10 +109,10 @@ ruff check .
 # Verify database migrations are aligned with models
 python -m alembic check
 
-# Seed initial cross-disciplinary taxonomy and representative courses
+# Seed initial cross-disciplinary taxonomy, representative courses, and achievements
 python -m app.seed
 
-# Run all automated tests (executes 86 tests against SQLite test database)
+# Run all automated tests (executes 106 tests against SQLite test database)
 pytest
 
 # Start local development server
@@ -134,7 +136,7 @@ npm run dev
 # Run TypeScript strict type verification
 npm run typecheck
 
-# Run Vitest unit and integration test suite (59 tests across 7 suites)
+# Run Vitest unit and integration test suite (62 tests across 8 suites)
 npm run test
 
 # Run fast linter (oxlint)

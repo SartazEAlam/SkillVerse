@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.modules.activities.models
         import app.modules.auth.models
         import app.modules.courses.models
+        import app.modules.progress.models
         import app.modules.skills.models  # noqa: F401
         from app.infrastructure.database import Base, engine
 
@@ -168,6 +169,7 @@ def create_app() -> FastAPI:
     from app.modules.activities.router import router as activities_router
     from app.modules.auth.router import router as auth_router
     from app.modules.courses.router import router as courses_router
+    from app.modules.progress.router import router as progress_router
     from app.modules.skills.router import router as skills_router
     from app.modules.users.router import router as users_router
 
@@ -176,6 +178,7 @@ def create_app() -> FastAPI:
     app.include_router(skills_router, prefix="/api/v1")
     app.include_router(courses_router, prefix="/api/v1")
     app.include_router(activities_router, prefix="/api/v1")
+    app.include_router(progress_router, prefix="/api/v1")
 
     return app
 

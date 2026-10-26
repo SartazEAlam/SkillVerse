@@ -42,7 +42,7 @@ class TestDatabaseMigrations:
 
         heads = script.get_heads()
         assert len(heads) == 1
-        assert heads[0] == "003_activities_and_assessments"
+        assert heads[0] == "004_progress_mastery"
 
     def test_postgresql_migration_sql_has_no_duplicate_enum_creations(self) -> None:
         """Regression test: verify each PostgreSQL enum type is created exactly once during upgrade."""
@@ -60,6 +60,7 @@ class TestDatabaseMigrations:
         backend_dir = Path(__file__).resolve().parent.parent
         ini_path = backend_dir / "alembic.ini"
         alembic_cfg = Config(str(ini_path))
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
 
         orig_db = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = "postgresql+psycopg2://mock:mock@localhost:5432/mock"
@@ -103,6 +104,7 @@ class TestDatabaseMigrations:
         backend_dir = Path(__file__).resolve().parent.parent
         ini_path = backend_dir / "alembic.ini"
         alembic_cfg = Config(str(ini_path))
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
 
         orig_db = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = "postgresql+psycopg2://mock:mock@localhost:5432/mock"

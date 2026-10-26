@@ -840,27 +840,173 @@ Summary of all activity results within an enrollment.
 
 ---
 
-## Learner Progress & Mastery
+## Learner Progression, Enrollments & Mastery (Phase 6 Implemented)
 
-### `GET /api/v1/progress/dashboard` 🔓
-Aggregated dashboard data: active enrollments, recent activity, skill mastery, achievements.
-
-### `GET /api/v1/progress/skills` 🔓
-Skill mastery overview for the authenticated user.
+### `POST /api/v1/courses/{slug}/enroll` 🔓
+Enroll the authenticated user in a published course.
+- Idempotently returns existing enrollment if already enrolled.
+- Validates course prerequisites; returns 400 (`PREREQUISITES_NOT_MET`) if required skills are unmet.
+- Rejects unauthenticated requests with 401.
 ```json
+// Response 201 Created / 200 OK
 {
-  "skills": [
-    { "skill_id": "uuid", "name": "HTML", "mastery_level": 85.0, "last_assessed_at": "..." },
-    { "skill_id": "uuid", "name": "CSS", "mastery_level": 42.0, "last_assessed_at": "..." }
-  ]
+  "id": "uuid",
+  "user_id": "uuid",
+  "course_id": "uuid",
+  "course_slug": "web-development-foundations",
+  "course_title": "Web Development Foundations",
+  "course_version_id": "uuid",
+  "version_number": 1,
+  "status": "ENROLLED",
+  "enrolled_at": "2026-10-25T12:00:00Z",
+  "last_accessed_at": null,
+  "completed_at": null,
+  "lessons_total": 4,
+  "lessons_completed": 0,
+  "progress_percentage": 0.0
 }
 ```
 
+### `GET /api/v1/courses/{slug}/prerequisites` 🔓
+Inspect prerequisites and eligibility for a course.
+```json
+// Response 200 OK
+{
+  "course_slug": "web-development-foundations",
+  "is_eligible": true,
+  "prerequisites": [],
+  "unmet_prerequisites": []
+}
+```
+
+### `GET /api/v1/enrollments` 🔓
+List all enrollments for the authenticated learner.
+```json
+// Response 200 OK
+[
+  {
+    "id": "uuid",
+    "course_slug": "web-development-foundations",
+    "course_title": "Web Development Foundations",
+    "status": "IN_PROGRESS",
+    "lessons_total": 4,
+    "lessons_completed": 1,
+    "progress_percentage": 25.0,
+    ...
+  }
+]
+```
+
+### `POST /api/v1/enrollments/{enrollment_id}/lessons/{lesson_id}/start` 🔓
+Mark a lesson as visited and transitioned to `IN_PROGRESS`.
+- Strictly enforces enrollment ownership (`403 Forbidden` if enrollment belongs to another learner).
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "enrollment_id": "uuid",
+  "lesson_id": "uuid",
+  "lesson_slug": "web-architecture",
+  "lesson_title": "Clients, Servers, and HTTP Requests",
+  "status": "IN_PROGRESS",
+  "started_at": "2026-10-25T12:05:00Z",
+  "completed_at": null,
+  "last_accessed_at": "2026-10-25T12:05:00Z"
+}
+```
+
+### `POST /api/v1/enrollments/{enrollment_id}/lessons/{lesson_id}/complete` 🔓
+Server-gated lesson completion.
+- If the lesson contains interactive activities, completion is rejected (`400 REQUIRED_ACTIVITIES_INCOMPLETE`) until all activities have at least one passed attempt.
+- Triggers automatic course completion when all lessons in the course are finished.
+```json
+// Response 200 OK
+{
+  "lesson_progress": {
+    "id": "uuid",
+    "status": "COMPLETED",
+    "completed_at": "2026-10-25T12:30:00Z"
+  },
+  "course_completed": true,
+  "course_progress_percentage": 100.0,
+  "lessons_completed": 4,
+  "lessons_total": 4
+}
+```
+
+### `GET /api/v1/progress/dashboard` 🔓
+Aggregated dashboard payload providing live learner stats, active enrollments, resume learning hero card, recent assessment attempts, skill mastery breakdown, and earnable achievements.
+```json
+// Response 200 OK
+{
+  "enrolled_courses": [ ... ],
+  "resume_learning": {
+    "course_slug": "web-development-foundations",
+    "course_title": "Web Development Foundations",
+    "lesson_slug": "semantic-html",
+    "lesson_title": "Semantic HTML5",
+    "progress_percentage": 25.0
+  },
+  "skills": [ ... ],
+  "recent_attempts": [ ... ],
+  "achievements": [ ... ],
+  "recommendations": [ ... ]
+}
+```
+
+### `GET /api/v1/progress/skills` 🔓
+Skill mastery overview with verified assessment evidence count, scores, and status tiers (`NOT_STARTED`, `LEARNING`, `PRACTICING`, `PROVISIONAL`, `MASTERED`, `NEEDS_REVIEW`).
+```json
+// Response 200 OK
+[
+  {
+    "skill_id": "uuid",
+    "skill_slug": "html-semantics",
+    "skill_name": "HTML Structure & Semantics",
+    "discipline_name": "Technology",
+    "mastery_score": 90.0,
+    "status": "MASTERED",
+    "evidence_count": 2,
+    "last_evaluated_at": "2026-10-25T12:30:00Z",
+    "evidence": [ ... ]
+  }
+]
+```
+
 ### `GET /api/v1/progress/achievements` 🔓
-List earned achievements.
+List earned and available achievements.
+```json
+// Response 200 OK
+[
+  {
+    "id": "uuid",
+    "slug": "first_lesson",
+    "title": "First Step",
+    "description": "Complete your first interactive lesson.",
+    "icon": "Award",
+    "criteria_type": "LESSONS_COMPLETED",
+    "criteria_threshold": 1,
+    "is_earned": true,
+    "earned_at": "2026-10-25T12:30:00Z"
+  }
+]
+```
 
 ### `GET /api/v1/progress/recommendations` 🔓
-Personalized course and skill recommendations based on current mastery and goals.
+Explainable next-step recommendations derived from incomplete enrollments and skill taxonomy prerequisites.
+```json
+// Response 200 OK
+[
+  {
+    "type": "RESUME_COURSE",
+    "title": "Continue Web Development Foundations",
+    "reason": "You're 25% complete. Next up: Semantic HTML5",
+    "course_slug": "web-development-foundations",
+    "lesson_slug": "semantic-html"
+  }
+]
+```
+
 
 ---
 

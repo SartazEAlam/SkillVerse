@@ -257,30 +257,34 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 
 ---
 
-### Enrollment and Progress
+### Enrollment and Progress (Phase 6 Implemented)
 
 #### `enrollments`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Enrollment identifier |
-| user_id | UUID | FK → users.id, NOT NULL | Enrolled learner |
-| course_version_id | UUID | FK → course_versions.id, NOT NULL | Enrolled course version |
-| enrolled_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Enrollment timestamp |
-| completed_at | TIMESTAMPTZ | NULLABLE | Completion timestamp |
-| | | UNIQUE(user_id, course_version_id) | One enrollment per version |
+| id | UUID (CHAR(36)) | PK | Unique enrollment identifier |
+| user_id | UUID (CHAR(36)) | FK → users.id, NOT NULL, ON DELETE CASCADE | Enrolled learner (indexed) |
+| course_id | UUID (CHAR(36)) | FK → courses.id, NOT NULL, ON DELETE CASCADE | Associated course aggregate (indexed) |
+| course_version_id | UUID (CHAR(36)) | FK → course_versions.id, NOT NULL, ON DELETE CASCADE | Immutable published course version snapshot (indexed) |
+| status | ENUM('ENROLLED','IN_PROGRESS','COMPLETED','DROPPED') | NOT NULL, DEFAULT 'ENROLLED' | Active enrollment lifecycle state |
+| enrolled_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Enrollment creation timestamp |
+| last_accessed_at | TIMESTAMPTZ | NULLABLE | Most recent lesson access timestamp |
+| completed_at | TIMESTAMPTZ | NULLABLE | Course completion timestamp |
+| | | UNIQUE(user_id, course_id) | One active enrollment per user per course |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `lesson_progress`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Progress record identifier |
-| enrollment_id | UUID | FK → enrollments.id, NOT NULL | Parent enrollment |
-| lesson_id | UUID | FK → lessons.id, NOT NULL | The lesson |
-| status | ENUM('not_started','in_progress','completed') | NOT NULL, DEFAULT 'not_started' | |
-| started_at | TIMESTAMPTZ | NULLABLE | First visit timestamp |
-| completed_at | TIMESTAMPTZ | NULLABLE | Completion timestamp |
-| | | UNIQUE(enrollment_id, lesson_id) | One progress per lesson per enrollment |
+| id | UUID (CHAR(36)) | PK | Progress record identifier |
+| enrollment_id | UUID (CHAR(36)) | FK → enrollments.id, NOT NULL, ON DELETE CASCADE | Parent course enrollment (indexed) |
+| lesson_id | UUID (CHAR(36)) | FK → lessons.id, NOT NULL, ON DELETE CASCADE | Target lesson (indexed) |
+| status | ENUM('NOT_STARTED','IN_PROGRESS','COMPLETED') | NOT NULL, DEFAULT 'NOT_STARTED' | Lesson progress status |
+| started_at | TIMESTAMPTZ | NULLABLE | First access timestamp |
+| completed_at | TIMESTAMPTZ | NULLABLE | Completion timestamp (gated by activity pass) |
+| last_accessed_at | TIMESTAMPTZ | NULLABLE | Most recent visit timestamp |
+| | | UNIQUE(enrollment_id, lesson_id) | Unique progress record per lesson per enrollment |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
@@ -306,42 +310,46 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 
 ---
 
-### Skill Mastery and Achievements
+### Skill Mastery and Achievements (Phase 6 Implemented)
 
 #### `skill_mastery`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Record identifier |
-| user_id | UUID | FK → users.id, NOT NULL | Learner |
-| skill_id | UUID | FK → skills.id, NOT NULL | Skill |
-| mastery_level | DECIMAL(5,2) | NOT NULL, DEFAULT 0.00 | Mastery percentage (0–100) |
-| evidence | JSONB | NOT NULL, DEFAULT '[]' | Array of evidence (activity IDs, scores, dates) |
-| last_assessed_at | TIMESTAMPTZ | NULLABLE | Last mastery update |
-| | | UNIQUE(user_id, skill_id) | One record per user per skill |
+| id | UUID (CHAR(36)) | PK | Record identifier |
+| user_id | UUID (CHAR(36)) | FK → users.id, NOT NULL, ON DELETE CASCADE | Evaluated learner (indexed) |
+| skill_id | UUID (CHAR(36)) | FK → skills.id, NOT NULL, ON DELETE CASCADE | Target taxonomy skill (indexed) |
+| mastery_score | FLOAT | NOT NULL, DEFAULT 0.0 | Average evaluation score (0.0–100.0) |
+| status | ENUM('NOT_STARTED','LEARNING','PRACTICING','PROVISIONAL','MASTERED','NEEDS_REVIEW') | NOT NULL, DEFAULT 'NOT_STARTED' | Evidence-backed mastery tier |
+| evidence_count | INTEGER | NOT NULL, DEFAULT 0 | Count of passed assessment attempts |
+| evidence_data | JSON / JSONB | NOT NULL, DEFAULT '[]' | Verified evidence history array (attempt IDs, scores, dates) |
+| last_evaluated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last mastery calculation timestamp |
+| | | UNIQUE(user_id, skill_id) | One mastery record per user per skill |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `achievements`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| id | UUID | PK | Achievement definition identifier |
-| slug | VARCHAR(100) | UNIQUE, NOT NULL | Unique identifier |
-| name | VARCHAR(200) | NOT NULL | Display name |
-| description | TEXT | NOT NULL | What the learner did to earn this |
-| icon | VARCHAR(100) | NULLABLE | Badge icon identifier |
-| criteria | JSONB | NOT NULL | Machine-readable unlock conditions |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Definition creation timestamp |
+| id | UUID (CHAR(36)) | PK | Unique achievement identifier |
+| slug | VARCHAR(100) | UNIQUE, NOT NULL | Deterministic achievement key (e.g. `first_lesson`) |
+| title | VARCHAR(200) | NOT NULL | Display name |
+| description | TEXT | NOT NULL | Learner unlock description |
+| icon | VARCHAR(100) | NULLABLE | Lucide icon identifier |
+| criteria_type | VARCHAR(50) | NOT NULL | Criterion category (`LESSONS_COMPLETED`, `COURSES_COMPLETED`, `PERFECT_SCORE`, `SKILLS_MASTERED`) |
+| criteria_threshold | INTEGER | NOT NULL, DEFAULT 1 | Numeric target required for unlock |
+| criteria_data | JSON / JSONB | NOT NULL, DEFAULT '{}' | Additional unlock specifications |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `user_achievements`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| user_id | UUID | FK → users.id, NOT NULL | Learner |
-| achievement_id | UUID | FK → achievements.id, NOT NULL | Earned achievement |
-| earned_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | When earned |
+| user_id | UUID (CHAR(36)) | FK → users.id, NOT NULL, ON DELETE CASCADE | Recipient learner |
+| achievement_id | UUID (CHAR(36)) | FK → achievements.id, NOT NULL, ON DELETE CASCADE | Unlocked achievement |
+| earned_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Timestamp when unlock was granted |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
-| | | PK(user_id, achievement_id) | |
+| | | PK(user_id, achievement_id) | Idempotent composite primary key |
 
 ---
 

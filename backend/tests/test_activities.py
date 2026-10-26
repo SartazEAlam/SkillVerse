@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -20,6 +22,16 @@ from app.modules.activities.grading import (
 )
 from app.modules.activities.models import AttemptStatus
 from app.modules.activities.service import ActivityServiceError
+from app.modules.auth.models import User
+from app.modules.courses.models import (
+    Course,
+    CourseSkill,
+    CourseStatus,
+    CourseVersion,
+    Lesson,
+    Module,
+)
+from app.modules.skills.models import Discipline, Skill, SkillDifficulty
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UNIT TESTS: DETERMINISTIC GRADING STRATEGIES
@@ -524,3 +536,394 @@ class TestActivityAPI:
             assert exc_info.value.status_code == 409
             assert exc_info.value.code == "CONCURRENT_SUBMISSION"
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REGRESSION TESTS: ACTIVITY-TO-SKILL ATTRIBUTION VALIDATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture
+def course_skills_setup(db: Session, creator_headers: dict[str, str]) -> dict[str, Any]:
+    creator = db.query(User).filter(User.email == "creator@example.com").first()
+
+    disc = Discipline(slug="web-dev-discipline", name="Web Development", sort_order=1)
+    db.add(disc)
+    db.flush()
+
+    skill_html = Skill(
+        slug="html-basics",
+        name="HTML Basics",
+        discipline_id=disc.id,
+        difficulty_level=SkillDifficulty.FOUNDATIONAL,
+        is_active=True,
+    )
+    skill_css = Skill(
+        slug="css-styling",
+        name="CSS Styling",
+        discipline_id=disc.id,
+        difficulty_level=SkillDifficulty.INTERMEDIATE,
+        is_active=True,
+    )
+    skill_python = Skill(
+        slug="python-core",
+        name="Python Core",
+        discipline_id=disc.id,
+        difficulty_level=SkillDifficulty.FOUNDATIONAL,
+        is_active=True,
+    )
+    skill_inactive = Skill(
+        slug="deprecated-tech",
+        name="Deprecated Tech",
+        discipline_id=disc.id,
+        difficulty_level=SkillDifficulty.FOUNDATIONAL,
+        is_active=False,
+    )
+    db.add_all([skill_html, skill_css, skill_python, skill_inactive])
+    db.flush()
+
+    # Course A teaches html-basics and css-styling
+    course_a = Course(
+        slug="intro-web-course",
+        title="Intro to Web",
+        short_description="Learn HTML and CSS",
+        discipline_id=disc.id,
+        status=CourseStatus.PUBLISHED,
+        creator_id=creator.id,
+    )
+    db.add(course_a)
+    db.flush()
+
+    cs_html = CourseSkill(course_id=course_a.id, skill_id=skill_html.id, is_primary=True)
+    cs_css = CourseSkill(course_id=course_a.id, skill_id=skill_css.id, is_primary=False)
+    db.add_all([cs_html, cs_css])
+
+    ver_a = CourseVersion(
+        course_id=course_a.id,
+        version_number=1,
+        title="Intro to Web v1",
+        is_active=True,
+    )
+    db.add(ver_a)
+    db.flush()
+    course_a.current_version_id = ver_a.id
+
+    mod_a = Module(course_version_id=ver_a.id, title="Web Module 1", sort_order=1)
+    db.add(mod_a)
+    db.flush()
+
+    lesson_a = Lesson(module_id=mod_a.id, slug="html-lesson", title="HTML Lesson", sort_order=1)
+    db.add(lesson_a)
+    db.flush()
+
+    # Course B teaches python-core
+    course_b = Course(
+        slug="intro-python-course",
+        title="Intro to Python",
+        short_description="Learn Python",
+        discipline_id=disc.id,
+        status=CourseStatus.PUBLISHED,
+        creator_id=creator.id,
+    )
+    db.add(course_b)
+    db.flush()
+
+    cs_py = CourseSkill(course_id=course_b.id, skill_id=skill_python.id, is_primary=True)
+    db.add(cs_py)
+
+    ver_b = CourseVersion(
+        course_id=course_b.id,
+        version_number=1,
+        title="Intro to Python v1",
+        is_active=True,
+    )
+    db.add(ver_b)
+    db.flush()
+    course_b.current_version_id = ver_b.id
+
+    mod_b = Module(course_version_id=ver_b.id, title="Python Module 1", sort_order=1)
+    db.add(mod_b)
+    db.flush()
+
+    lesson_b = Lesson(module_id=mod_b.id, slug="python-lesson", title="Python Lesson", sort_order=1)
+    db.add(lesson_b)
+    db.commit()
+
+    return {
+        "discipline": disc,
+        "skill_html": skill_html,
+        "skill_css": skill_css,
+        "skill_python": skill_python,
+        "skill_inactive": skill_inactive,
+        "course_a": course_a,
+        "course_b": course_b,
+        "lesson_a": lesson_a,
+        "lesson_b": lesson_b,
+    }
+
+
+class TestActivitySkillTagValidation:
+    """Regression tests for activity-to-skill attribution validation."""
+
+    def test_valid_skill_tag_belonging_to_course(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Creating an activity with a valid skill belonging to the course succeeds and canonicalizes tags."""
+        lesson_id = course_skills_setup["lesson_a"].id
+        skill_html = course_skills_setup["skill_html"]
+        skill_css = course_skills_setup["skill_css"]
+
+        # 1. With explicit skill_id and skill_slug matching
+        res1 = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "HTML Semantics Check",
+                "instructions": "Identify valid semantic elements.",
+                "configuration": {"statement": "<article> is a semantic element."},
+                "answer_key": {"correct_boolean": True},
+                "skill_id": skill_html.id,
+                "skill_slug": skill_html.slug,
+            },
+            headers=creator_headers,
+        )
+        assert res1.status_code == 201
+        data1 = res1.json()
+        assert data1["skill_id"] == skill_html.id
+        assert data1["skill_slug"] == "html-basics"
+        assert data1["configuration"]["skill_id"] == skill_html.id
+        assert data1["configuration"]["skill_slug"] == "html-basics"
+
+        # 2. With skill_id only -> resolves and canonicalizes skill_slug
+        res2 = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "CSS Styling Check",
+                "instructions": "Identify CSS concepts.",
+                "configuration": {"statement": "CSS grid is two-dimensional."},
+                "answer_key": {"correct_boolean": True},
+                "skill_id": skill_css.id,
+            },
+            headers=creator_headers,
+        )
+        assert res2.status_code == 201
+        data2 = res2.json()
+        assert data2["skill_id"] == skill_css.id
+        assert data2["skill_slug"] == "css-styling"
+
+        # 3. With skill_slug only -> resolves and canonicalizes skill_id
+        res3 = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "CSS Styling Check 2",
+                "instructions": "Identify CSS concepts.",
+                "configuration": {"statement": "Flexbox is one-dimensional."},
+                "answer_key": {"correct_boolean": True},
+                "skill_slug": "css-styling",
+            },
+            headers=creator_headers,
+        )
+        assert res3.status_code == 201
+        data3 = res3.json()
+        assert data3["skill_id"] == skill_css.id
+        assert data3["skill_slug"] == "css-styling"
+
+    def test_nonexistent_skill_reference(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Nonexistent skill ID or slug returns 404 SKILL_NOT_FOUND."""
+        lesson_id = course_skills_setup["lesson_a"].id
+
+        # Nonexistent ID
+        res_id = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "Bogus Skill ID Activity",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_id": "00000000-0000-0000-0000-000000000000",
+            },
+            headers=creator_headers,
+        )
+        assert res_id.status_code == 404
+        assert res_id.json()["error"]["code"] == "SKILL_NOT_FOUND"
+
+        # Nonexistent slug
+        res_slug = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "Bogus Skill Slug Activity",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_slug": "nonexistent-quantum-skill",
+            },
+            headers=creator_headers,
+        )
+        assert res_slug.status_code == 404
+        assert res_slug.json()["error"]["code"] == "SKILL_NOT_FOUND"
+
+    def test_inactive_skill_reference(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Inactive skill reference returns 400 INACTIVE_SKILL."""
+        lesson_id = course_skills_setup["lesson_a"].id
+        skill_inactive = course_skills_setup["skill_inactive"]
+
+        res = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "Deprecated Tech Activity",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_slug": skill_inactive.slug,
+            },
+            headers=creator_headers,
+        )
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "INACTIVE_SKILL"
+
+    def test_skill_belonging_to_another_course(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Referencing an active skill from another course returns 400 UNRELATED_SKILL."""
+        lesson_a_id = course_skills_setup["lesson_a"].id
+        skill_python = course_skills_setup["skill_python"]
+
+        # Pass python-core slug to an HTML lesson in Course A
+        res = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_a_id,
+                "activity_type": "true_false",
+                "title": "Misattributed Skill Activity",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_slug": skill_python.slug,
+            },
+            headers=creator_headers,
+        )
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "UNRELATED_SKILL"
+        assert "not associated with course" in res.json()["error"]["message"]
+
+        # Pass python-core ID to an HTML lesson in Course A
+        res_by_id = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_a_id,
+                "activity_type": "true_false",
+                "title": "Misattributed Skill Activity by ID",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_id": skill_python.id,
+            },
+            headers=creator_headers,
+        )
+        assert res_by_id.status_code == 400
+        assert res_by_id.json()["error"]["code"] == "UNRELATED_SKILL"
+
+    def test_conflicting_skill_id_and_skill_slug(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Supplying skill_id and skill_slug that point to different skills returns 400 CONFLICTING_SKILL_TAGS."""
+        lesson_id = course_skills_setup["lesson_a"].id
+        skill_html = course_skills_setup["skill_html"]
+        skill_css = course_skills_setup["skill_css"]
+
+        res = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "Conflicting Skills Activity",
+                "instructions": "Test.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_id": skill_html.id,
+                "skill_slug": skill_css.slug,
+            },
+            headers=creator_headers,
+        )
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "CONFLICTING_SKILL_TAGS"
+
+    def test_activity_without_skill_tags(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Creating an activity without skill tags succeeds, preserving optionality and backwards compatibility."""
+        lesson_id = course_skills_setup["lesson_a"].id
+
+        res = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": lesson_id,
+                "activity_type": "true_false",
+                "title": "Untagged Activity",
+                "instructions": "General practice question.",
+                "configuration": {"statement": "This is a general question."},
+                "answer_key": {"correct_boolean": True},
+            },
+            headers=creator_headers,
+        )
+        assert res.status_code == 201
+        data = res.json()
+        assert data["skill_id"] is None
+        assert data["skill_slug"] is None
+
+    def test_skill_tag_without_lesson_rejected(
+        self,
+        client: TestClient,
+        creator_headers: dict[str, str],
+        course_skills_setup: dict[str, Any],
+    ) -> None:
+        """Supplying a skill tag without an associated lesson returns 400 LESSON_REQUIRED_FOR_SKILL."""
+        skill_html = course_skills_setup["skill_html"]
+
+        res = client.post(
+            "/api/v1/activities",
+            json={
+                "lesson_id": None,
+                "activity_type": "true_false",
+                "title": "Orphan Activity with Skill Tag",
+                "instructions": "Cannot attribute without lesson and course context.",
+                "configuration": {"statement": "Test."},
+                "answer_key": {"correct_boolean": True},
+                "skill_slug": skill_html.slug,
+            },
+            headers=creator_headers,
+        )
+        assert res.status_code == 400
+        assert res.json()["error"]["code"] == "LESSON_REQUIRED_FOR_SKILL"

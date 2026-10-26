@@ -9,11 +9,14 @@ import {
   Compass,
   Target,
   Sparkles,
+  AlertCircle,
+  PartyPopper,
 } from 'lucide-react'
 import type { ApiLessonDetail } from '../../types/catalog'
 import type { FlattenedLesson } from '../../types/lesson'
 import type { ActivitySummary } from '../../types/activity'
 import { fetchLessonActivities } from '../../services/activityApi'
+import { progressApi } from '../../services/progressApi'
 import { ActivityContainer } from '../activities/ActivityContainer'
 import { LessonRenderer } from './LessonRenderer'
 import { Button } from '../../components/ui/Button'
@@ -24,6 +27,8 @@ interface LessonContentProps {
   moduleTitle?: string
   prevLesson: FlattenedLesson | null
   nextLesson: FlattenedLesson | null
+  enrollmentId?: string
+  onProgressUpdated?: (completedSlug?: string) => void
 }
 
 export const LessonContent: React.FC<LessonContentProps> = ({
@@ -32,8 +37,13 @@ export const LessonContent: React.FC<LessonContentProps> = ({
   moduleTitle,
   prevLesson,
   nextLesson,
+  enrollmentId,
+  onProgressUpdated,
 }) => {
   const [activities, setActivities] = useState<ActivitySummary[]>([])
+  const [isCompleting, setIsCompleting] = useState<boolean>(false)
+  const [completeError, setCompleteError] = useState<string | null>(null)
+  const [courseCompletedBanner, setCourseCompletedBanner] = useState<boolean>(false)
 
   useEffect(() => {
     let isMounted = true
@@ -55,15 +65,58 @@ export const LessonContent: React.FC<LessonContentProps> = ({
   const embeddedActivityIds = new Set(
     (lesson.blocks || [])
       .filter((b) => b.block_type === 'activity')
-      .map((b) => (b.content as any)?.activity_id)
+      .map((b) => (b.content as Record<string, unknown> | null)?.activity_id as string | undefined)
       .filter(Boolean)
   )
 
   const standaloneActivities = activities.filter((a) => !embeddedActivityIds.has(a.id))
   const learningObjectives = lesson.learning_objectives || []
 
+  const handleCompleteLesson = async () => {
+    if (!enrollmentId || !lesson.id) return
+    setIsCompleting(true)
+    setCompleteError(null)
+
+    try {
+      const resp = await progressApi.completeLesson(enrollmentId, lesson.id)
+      if (resp.course_completed) {
+        setCourseCompletedBanner(true)
+      }
+      if (onProgressUpdated) {
+        onProgressUpdated(lesson.slug)
+      }
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string }
+      setCompleteError(apiErr.message || 'Complete all required activities before finishing this lesson.')
+    } finally {
+      setIsCompleting(false)
+    }
+  }
+
   return (
     <article className="max-w-4xl mx-auto px-4 sm:px-8 py-8 sm:py-10 space-y-8 animate-fadeIn">
+      {/* Course Completion Celebration Banner */}
+      {courseCompletedBanner && (
+        <div className="p-4 rounded-xl bg-accent-violet/15 border border-accent-violet/40 flex items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-accent-violet/20 flex items-center justify-center text-accent-violet">
+              <PartyPopper className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-text-primary">Course Completed! 🎉</h3>
+              <p className="text-xs text-text-secondary">
+                You have passed all required lessons and assessments for this course version.
+              </p>
+            </div>
+          </div>
+          <Link to="/dashboard">
+            <Button variant="primary" size="sm">
+              View Progress
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* Lesson Header Area */}
       <header className="space-y-4 border-b border-border-subtle/80 pb-6">
         {moduleTitle && (
@@ -94,23 +147,26 @@ export const LessonContent: React.FC<LessonContentProps> = ({
           <span className="flex items-center gap-1.5 bg-bg-surface px-2.5 py-1 rounded-md border border-border-subtle">
             <span>{lesson.blocks?.length || 0} Content Blocks</span>
           </span>
+
+          {activities.length > 0 && (
+            <span className="flex items-center gap-1.5 bg-bg-surface px-2.5 py-1 rounded-md border border-border-subtle">
+              <Target className="w-3.5 h-3.5 text-accent-violet" />
+              <span>{activities.length} {activities.length === 1 ? 'Activity' : 'Activities'}</span>
+            </span>
+          )}
         </div>
 
         {/* Learning Objectives Box */}
         {learningObjectives.length > 0 && (
-          <div
-            role="region"
-            aria-label="Lesson learning objectives"
-            className="p-4 sm:p-5 rounded-xl bg-bg-elevated/70 border border-border-medium space-y-2.5 mt-4"
-          >
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-primary">
-              <Target className="w-4 h-4 text-accent-cyan" />
+          <div className="p-4 rounded-xl bg-bg-surface/50 border border-border-subtle space-y-2 mt-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-text-primary flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-accent-cyan" />
               <span>Learning Objectives</span>
-            </div>
-            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-text-secondary">
-              {learningObjectives.map((obj, idx) => (
-                <li key={idx} className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-state-success shrink-0 mt-0.5" />
+            </span>
+            <ul className="space-y-1.5 pt-1">
+              {learningObjectives.map((obj, i) => (
+                <li key={i} className="text-xs text-text-secondary flex items-start gap-2">
+                  <span className="text-accent-cyan font-mono mt-0.5">•</span>
                   <span>{obj}</span>
                 </li>
               ))}
@@ -119,24 +175,64 @@ export const LessonContent: React.FC<LessonContentProps> = ({
         )}
       </header>
 
-      {/* Main Structured Educational Content Blocks */}
-      <section aria-label="Lesson content">
-        <LessonRenderer blocks={lesson.blocks || []} />
+      {/* Structured Content Blocks (Markdown, Code, Callout, etc.) */}
+      <section aria-label="Lesson Content" className="space-y-6">
+        {lesson.blocks && lesson.blocks.length > 0 ? (
+          <LessonRenderer blocks={lesson.blocks} />
+        ) : (
+          <div className="p-8 text-center border border-dashed border-border-medium rounded-xl text-text-muted text-sm">
+            <p>This lesson does not have structured content blocks published yet.</p>
+          </div>
+        )}
       </section>
 
-      {/* Interactive Assessment Activities (if not already embedded in blocks) */}
+      {/* Standalone Interactive Activities */}
       {standaloneActivities.length > 0 && (
-        <section aria-label="Lesson interactive activities" className="space-y-6 pt-4 border-t border-border-subtle">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-accent-violet" />
-            <h2 className="text-xl font-extrabold text-text-primary tracking-tight">
-              Interactive Assessment Checkpoint
-            </h2>
+        <section aria-label="Interactive Assessments" className="pt-6 border-t border-border-subtle space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-accent-violet" />
+              <h2 className="text-lg font-bold text-text-primary">
+                Interactive Checkpoints
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-text-muted">
+              {standaloneActivities.length} {standaloneActivities.length === 1 ? 'Task' : 'Tasks'}
+            </span>
           </div>
           {standaloneActivities.map((act) => (
             <ActivityContainer key={act.id} activityId={act.id} />
           ))}
         </section>
+      )}
+
+      {/* Completion Action Callout for Enrolled Learners */}
+      {enrollmentId && (
+        <div className="p-5 rounded-xl bg-bg-surface border border-border-medium space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-text-primary">Lesson Progression Status</h3>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Complete all required activities above, then record lesson completion.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleCompleteLesson}
+              isLoading={isCompleting}
+              leftIcon={<CheckCircle2 className="w-4 h-4 text-state-success" />}
+            >
+              Mark Lesson Complete
+            </Button>
+          </div>
+          {completeError && (
+            <div className="p-2.5 rounded-lg bg-state-error/10 border border-state-error/30 text-xs text-state-error flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{completeError}</span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Bottom Navigation & Controls */}

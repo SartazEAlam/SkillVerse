@@ -21,6 +21,7 @@ from app.modules.courses.content_schemas import (
 )
 from app.modules.courses.models import Course, CourseDifficulty, CourseStatus
 from app.modules.courses.service import CourseService
+from app.modules.progress.models import Achievement
 from app.modules.skills.models import Discipline, SkillDifficulty, SkillPrerequisite
 from app.modules.skills.service import SkillService
 
@@ -957,6 +958,7 @@ def seed_phase5_activities(db: Session) -> None:
         # ── 1. Web Development Foundations ─────────────────────────────────
         {
             "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "skill_slug": "html-semantics",
             "activity_type": ActivityType.SINGLE_CHOICE.value,
             "title": "HTML5 Primary Landmark",
             "instructions": "Select the correct semantic element that represents the unique, dominant content of the document body.",
@@ -982,6 +984,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "skill_slug": "html-semantics",
             "activity_type": ActivityType.MULTIPLE_SELECT.value,
             "title": "Accessible Document Landmark Elements",
             "instructions": "Select all elements that establish native accessible landmarks in HTML5.",
@@ -1005,6 +1008,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["semantic-tags", "document-landmarks"],
+            "skill_slug": "html-semantics",
             "activity_type": ActivityType.FILL_IN_THE_BLANK.value,
             "title": "HTML5 Semantic Landmark Elements",
             "instructions": "Fill in the missing HTML element names in the passage below.",
@@ -1037,6 +1041,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["forms-and-inputs", "accessible-forms"],
+            "skill_slug": "html-semantics",
             "activity_type": ActivityType.CODE_EXERCISE.value,
             "title": "Accessible Form Input & Label Pair",
             "instructions": "Write an accessible HTML form input paired with an explicit <label> using matching 'for' and 'id' attributes.",
@@ -1054,6 +1059,7 @@ def seed_phase5_activities(db: Session) -> None:
         # ── 2. Spoken English and Communication ────────────────────────────
         {
             "lesson_slugs": ["bluf-framework", "handling-interruptions", "executive-summary"],
+            "skill_slug": "workplace-communication",
             "activity_type": ActivityType.SCENARIO.value,
             "title": "Executive Interruption Decision",
             "instructions": "Evaluate the meeting situation and choose the optimal communication strategy.",
@@ -1090,6 +1096,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["star-framework", "star-method"],
+            "skill_slug": "presentation-skills",
             "activity_type": ActivityType.ORDERING.value,
             "title": "STAR Response Methodology Sequence",
             "instructions": "Arrange the four components of a behavioral interview answer in chronological order.",
@@ -1112,6 +1119,7 @@ def seed_phase5_activities(db: Session) -> None:
         # ── 3. Personal Productivity ───────────────────────────────────────
         {
             "lesson_slugs": ["high-leverage-outcomes"],
+            "skill_slug": "goal-setting",
             "activity_type": ActivityType.MATCHING.value,
             "title": "Eisenhower Matrix Quadrant Classification",
             "instructions": "Match each daily scenario to its proper Eisenhower Matrix quadrant.",
@@ -1146,6 +1154,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["calendar-timeblocking"],
+            "skill_slug": "focus-distraction-control",
             "activity_type": ActivityType.TRUE_FALSE.value,
             "title": "Cognitive Context-Switching Principle",
             "instructions": "Evaluate whether the statement is true or false based on attention science.",
@@ -1162,6 +1171,7 @@ def seed_phase5_activities(db: Session) -> None:
         },
         {
             "lesson_slugs": ["calendar-timeblocking"],
+            "skill_slug": "time-energy-management",
             "activity_type": ActivityType.SHORT_ANSWER.value,
             "title": "Focus Scheduling Technique",
             "instructions": "Enter the term used for allocating uninterrupted calendar slots to dedicated high-leverage tasks.",
@@ -1197,13 +1207,24 @@ def seed_phase5_activities(db: Session) -> None:
                 select(Activity).where(Activity.lesson_id == lesson.id, Activity.title == spec["title"])
             ).first()
 
-            if not existing_act:
+            config = dict(spec["configuration"])
+            if "skill_slug" in spec and "skill_slug" not in config:
+                config["skill_slug"] = spec["skill_slug"]
+
+            if existing_act:
+                # Ensure existing activity configuration stores skill_slug
+                if "skill_slug" in spec:
+                    curr_cfg = dict(existing_act.configuration or {})
+                    if curr_cfg.get("skill_slug") != spec["skill_slug"]:
+                        curr_cfg["skill_slug"] = spec["skill_slug"]
+                        existing_act.configuration = curr_cfg
+            else:
                 act = Activity(
                     lesson_id=lesson.id,
                     activity_type=spec["activity_type"],
                     title=spec["title"],
                     instructions=spec["instructions"],
-                    configuration=spec["configuration"],
+                    configuration=config,
                     max_attempts=spec.get("max_attempts"),
                     sort_order=spec.get("sort_order", 0),
                 )
@@ -1248,6 +1269,68 @@ def seed_phase5_activities(db: Session) -> None:
     db.commit()
 
 
+def seed_phase6_achievements(db: Session) -> None:
+    """Seed standard platform achievements idempotently."""
+    achievements_spec = [
+        {
+            "slug": "first_lesson",
+            "name": "First Step",
+            "description": "Completed your first lesson on SkillVerse.",
+            "icon": "award",
+            "criteria": {"type": "lesson_count", "threshold": 1},
+        },
+        {
+            "slug": "fast_learner",
+            "name": "Active Learner",
+            "description": "Completed three lessons across your enrolled tracks.",
+            "icon": "zap",
+            "criteria": {"type": "lesson_count", "threshold": 3},
+        },
+        {
+            "slug": "first_course",
+            "name": "Course Finisher",
+            "description": "Satisfied all curriculum requirements and completed an entire course.",
+            "icon": "trophy",
+            "criteria": {"type": "course_completion", "threshold": 1},
+        },
+        {
+            "slug": "perfect_score",
+            "name": "Sharpshooter",
+            "description": "Achieved a 100% score on an interactive learning assessment.",
+            "icon": "target",
+            "criteria": {"type": "assessment_score", "threshold": 100.0},
+        },
+        {
+            "slug": "skill_master",
+            "name": "Mastery Unlocked",
+            "description": "Demonstrated verified, multi-task evidence to achieve Mastered status in a skill.",
+            "icon": "shield-check",
+            "criteria": {"type": "skill_mastery", "status": "MASTERED"},
+        },
+        {
+            "slug": "polymath",
+            "name": "Cross-Disciplinary Thinker",
+            "description": "Enrolled in courses across at least two distinct disciplines.",
+            "icon": "sparkles",
+            "criteria": {"type": "discipline_count", "threshold": 2},
+        },
+    ]
+
+    for spec in achievements_spec:
+        existing = db.scalars(select(Achievement).where(Achievement.slug == spec["slug"])).first()
+        if not existing:
+            ach = Achievement(
+                slug=spec["slug"],
+                name=spec["name"],
+                description=spec["description"],
+                icon=spec["icon"],
+                criteria=spec["criteria"],
+            )
+            db.add(ach)
+            logger.info("Seeded Achievement '%s'", spec["name"])
+    db.commit()
+
+
 def run_seed() -> None:
     """Execute complete idempotent seed."""
     logger.info("Starting SkillVerse Database Seeding...")
@@ -1273,8 +1356,11 @@ def run_seed() -> None:
         # Seed Phase 5 representative interactive activities
         seed_phase5_activities(db)
 
+        # Seed Phase 6 platform achievements
+        seed_phase6_achievements(db)
+
         logger.info(
-            "Database Seeding Completed Successfully! All 3 courses, taxonomy, and activities initialized."
+            "Database Seeding Completed Successfully! All 3 courses, taxonomy, activities, and achievements initialized."
         )
     finally:
         db.close()

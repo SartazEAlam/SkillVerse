@@ -422,4 +422,8 @@ API ← Poll / webhook for result
 **Decision:** Learner-submitted code must never be executed within the main FastAPI application or host worker processes (strictly forbidding `eval()`, `exec()`, or direct host subprocess invocation). All code execution is isolated behind an explicit `SandboxRunnerInterface` that dispatches jobs to disposable, resource-constrained container environments.
 **Rationale:** Untrusted learner code can attempt denial-of-service (CPU spinning, fork bombs, memory exhaustion), unauthorized network access (data exfiltration, SSRF), or filesystem compromise. Decoupling code execution behind an isolated runner boundary ensures platform resilience and system security.
 
+### ADR-010: Evidence-Backed Skill Mastery and Progression Cascade
+**Decision:** Base skill mastery levels (`NOT_STARTED`, `LEARNING`, `PRACTICING`, `PROVISIONAL`, `MASTERED`, `NEEDS_REVIEW`) on authenticated, server-verified attempt evidence requiring a minimum number of distinct completed tasks and threshold average scores, while automating progression cascades (attempt passed → lesson progress updated → course progress calculated and completed) through backend domain events.
+**Rationale:** Simple binary checkmarks or self-reported completions allow learners to bypass rigorous demonstration of learning outcomes. Requiring multiple distinct assessment tasks prevents learners from grinding a single easy question to falsely claim subject mastery. Automating the progression cascade on the backend ensures tamper-proof progression records that are consistent across the learner dashboard, course view, and skill map.
+
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Network,
@@ -10,10 +10,14 @@ import {
   Lock,
   ExternalLink,
   Sparkles,
-  MoveRight
+  MoveRight,
+  ShieldCheck,
 } from 'lucide-react'
 import { SAMPLE_SKILLS, SKILL_CATEGORIES } from '../data/skills'
 import type { Skill } from '../types/skill'
+import type { SkillMastery } from '../types/progress'
+import { useAuth } from '../context/AuthContext'
+import { progressApi } from '../services/progressApi'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -56,6 +60,31 @@ export const SkillsPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'visual' | 'list'>('visual')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [activeSkill, setActiveSkill] = useState<Skill | null>(SAMPLE_SKILLS[0])
+
+  // Phase 6 Live Skill Mastery
+  const { user } = useAuth()
+  const [masteries, setMasteries] = useState<Record<string, SkillMastery>>({})
+
+  useEffect(() => {
+    if (!user) return
+    let isMounted = true
+    progressApi
+      .getSkillsMastery()
+      .then((data) => {
+        if (!isMounted) return
+        const map: Record<string, SkillMastery> = {}
+        data.forEach((m) => {
+          map[m.skill_slug] = m
+          map[m.skill_id] = m
+        })
+        setMasteries(map)
+      })
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+    }
+  }, [user])
 
   const filteredSkills = SAMPLE_SKILLS.filter(
     (skill) => selectedCategory === 'all' || skill.categoryId === selectedCategory
@@ -419,9 +448,32 @@ export const SkillsPage: React.FC = () => {
                     >
                       {activeSkill.level}
                     </Badge>
-                    <span className="text-xs font-mono text-text-muted">
-                      Demo Score: <strong className="text-text-primary">{activeSkill.sampleMasteryPct}%</strong>
-                    </span>
+                    {user && activeSkill && masteries[activeSkill.slug] ? (
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            masteries[activeSkill.slug].status === 'MASTERED'
+                              ? 'emerald'
+                              : masteries[activeSkill.slug].status === 'PROVISIONAL'
+                              ? 'cyan'
+                              : masteries[activeSkill.slug].status === 'PRACTICING'
+                              ? 'violet'
+                              : 'default'
+                          }
+                          size="sm"
+                          icon={<ShieldCheck className="w-3 h-3" />}
+                        >
+                          {masteries[activeSkill.slug].status}
+                        </Badge>
+                        <span className="text-xs font-mono text-text-muted">
+                          Verified: <strong className="text-text-primary">{masteries[activeSkill.slug].mastery_level}%</strong>
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-mono text-text-muted">
+                        Demo Score: <strong className="text-text-primary">{activeSkill.sampleMasteryPct}%</strong>
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="text-xl font-bold text-text-primary">

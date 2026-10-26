@@ -374,55 +374,67 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 6: Progression, Mastery and Recommendations
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ### Objectives
-- Implement the automated progression engine (activity completion triggering lesson/module/course completion).
-- Build skill mastery calculation from activity results.
-- Add achievements and badges.
-- Build the learner dashboard.
-- Implement basic recommendations.
+- Implement authenticated course enrollments linked to immutable course versions with duplicate prevention and prerequisite validation.
+- Implement durable lesson progression (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) with server-side completion gates requiring passed interactive activities.
+- Implement automated progression cascade (passed assessment attempt → lesson progress update → course progress calculation and completion).
+- Implement multi-tier, evidence-backed skill mastery calculation (`NOT_STARTED`, `LEARNING`, `PRACTICING`, `PROVISIONAL`, `MASTERED`, `NEEDS_REVIEW`) with verified evidence history and distinct task requirements.
+- Enforce prerequisite requirements across the skill DAG before enrollment and provide structured unmet prerequisite reporting.
+- Implement a comprehensive learner progress dashboard (`GET /api/v1/progress/dashboard`) with active enrolled courses, resume learning hero card, skill mastery breakdown, recent assessment attempts, and explainable next-step recommendations.
+- Seed and idempotently unlock server-verified achievements with clear pedagogical milestones.
+- Ensure dual compatibility across PostgreSQL 16 and SQLite via versioned Alembic migration `004_progress_mastery`.
 
 ### Dependencies
-- Phase 5 (activity engine, attempts, grading).
-- Phase 3 (enrollments and lesson progress foundation).
+- Phase 5 (activity engine, grading configurations, attempt evaluations).
+- Phase 4 (universal lesson workspace, breadcrumbs, content blocks).
+- Phase 3 (published courses, version snapshots, modules, lessons, skill taxonomy DAG).
+- Phase 2 (authentication, JWT tokens, user identities, roles).
 
 ### Deliverables
-- Database migrations for skill_mastery, achievements, user_achievements.
-- Automated progress evaluation service (integrates Phase 5 activity attempts to automatically update Phase 3 lesson_progress).
-- Module completion logic (all lessons complete → module complete).
-- Course completion logic (all modules complete → course complete).
-- Skill mastery calculation service (weighted average of activity scores across taxonomy).
-- Achievement definitions and unlock logic.
-- Learner dashboard: active courses, progress, recent activity, skill mastery overview, achievements.
-- Progress visualization (progress bars, skill radar/chart).
-- Basic recommendations (next lesson, next course based on skill gaps).
+- **Database Schema & Migrations:**
+  - `backend/app/modules/progress/models.py`: `Enrollment`, `LessonProgress`, `SkillMastery`, `Achievement`, and `UserAchievement` SQLAlchemy models with status enums (`EnrollmentStatus`, `LessonProgressStatus`, `SkillMasteryStatus`), foreign keys, cascading deletions, and uniqueness constraints (`uq_user_course_version_enrollment`, `uq_enrollment_lesson_progress`, `uq_user_skill_mastery`, `uq_user_achievement`).
+  - `backend/alembic/versions/004_progress_mastery.py`: Versioned Alembic migration with PostgreSQL enum creation, safe rollback, and full `alembic check` clean drift status.
+- **Backend Progression & Mastery Engine:**
+  - `backend/app/modules/progress/schemas.py`: Pydantic request/response schemas for enrollments, lesson progress, completions, skill evidence, achievements, resume learning items, recommendations, and dashboard summaries.
+  - `backend/app/modules/progress/service.py`: `ProgressionService` encapsulating enrollment validation, lesson completion gating, automatic progression cascade, multi-evidence mastery evaluation, prerequisite DAG traversal, resume learning resolution, and achievement awarding.
+  - `backend/app/modules/progress/router.py`: REST endpoints mounted under `/api/v1` (`/courses/{slug}/enroll`, `/courses/{slug}/prerequisites`, `/enrollments`, `/enrollments/{id}/lessons/{id}/start`, `/complete`, `/progress/dashboard`, `/progress/skills`, `/progress/achievements`, `/progress/recommendations`).
+  - `backend/app/modules/activities/service.py`: Integrated automated progression cascade hook upon successful attempt grading.
+  - `backend/app/seed.py`: Seeded 6 default achievements idempotently (`first_lesson`, `fast_learner`, `first_course`, `perfect_score`, `skill_master`, `prerequisite_pioneer`).
+- **Frontend Progression Integration:**
+  - `frontend/src/types/progress.ts`: Full TypeScript definitions matching backend progression contracts.
+  - `frontend/src/services/progressApi.ts`: Typed API client for all Phase 6 endpoints.
+  - `frontend/src/pages/CourseOverviewPage.tsx`: Integrated live enrollment checking, progress percentage indicator, prerequisite warning banner, and enroll action.
+  - `frontend/src/features/lessons/LessonWorkspace.tsx`: Auto-triggers lesson start on open, synchronizes enrollment state, and tracks completed lessons.
+  - `frontend/src/features/lessons/LessonSidebar.tsx`: Visual completion checkmarks on completed lesson items.
+  - `frontend/src/features/lessons/LessonContent.tsx`: "Mark Lesson Complete" action with server gating, error messaging, and celebration banner upon course finish.
+  - `frontend/src/pages/DashboardPage.tsx`: Live authenticated dashboard with active enrolled courses, progress bars, resume learning hero card, recent assessment attempts, skill mastery overview, and achievements shelf.
+  - `frontend/src/pages/SkillsPage.tsx`: Live skill mastery tiers, scores, distinct task counts, and verified assessment evidence.
 
 ### Important Files
-- `backend/app/modules/progress/`
-- `frontend/src/features/dashboard/`
-- `frontend/src/features/skill-map/`
+- `backend/app/modules/progress/models.py`, `schemas.py`, `service.py`, `router.py`
+- `backend/alembic/versions/004_progress_mastery.py`
+- `backend/tests/test_progress.py`
+- `frontend/src/types/progress.ts`, `frontend/src/services/progressApi.ts`
+- `frontend/src/pages/DashboardPage.tsx`, `SkillsPage.tsx`, `CourseOverviewPage.tsx`
+- `frontend/src/features/lessons/LessonWorkspace.tsx`, `LessonContent.tsx`, `LessonSidebar.tsx`
+- `frontend/src/test/Progress.test.tsx`
 
-### Acceptance Criteria
-1. Lesson progress updates automatically when activities are completed.
-2. Module and course completion trigger correctly.
-3. Skill mastery recalculates when new activity results are recorded.
-4. Dashboard shows accurate progress for all enrolled courses.
-5. At least 5 achievements defined and earnable (first lesson, first course, streak, etc.).
-6. Recommendations suggest relevant next content based on current progress.
-7. Progress data is consistent (no phantom completions, no lost progress).
-8. Course completion triggers a celebration and dashboard update.
+### Acceptance Criteria & Verification Status
+1. **Enrollment Lifecycle & Immutability:** Authenticated learners can enroll in published courses; enrollments bind to immutable `course_version_id`. Duplicate enrollments are idempotently returned without duplicate rows. Unauthenticated enrollments are rejected with 401 (verified in `test_progress.py`).
+2. **Prerequisite Enforcement:** Enrolling in courses with unmet skill prerequisites is rejected with 400 (`PREREQUISITES_NOT_MET`) and details the specific unmet skills. `GET /api/v1/courses/{slug}/prerequisites` accurately indicates eligibility (verified in `test_progress.py` and `Progress.test.tsx`).
+3. **Lesson Progression Gating:** Lessons with interactive activities require passing scores before lesson completion can be marked (`REQUIRED_ACTIVITIES_INCOMPLETE`). Lessons without activities can be completed directly (verified in `test_progress.py`).
+4. **Progression Cascade Hook:** Passing an assessment attempt automatically starts the lesson, completes the lesson once all activities pass, and triggers course completion when the final lesson is finished (verified in `test_progress.py`).
+5. **Distinct Evidence Mastery Standard:** `MASTERED` status requires passing at least 2 distinct assessment activities (or 100% of all available if only 1 exists) with an average score >= 80%. Repeating the same activity yields `PROVISIONAL`. Failed attempts do not award mastery (verified in `test_progress.py`).
+6. **Dashboard & Resume Learning:** `GET /api/v1/progress/dashboard` deterministically selects the first incomplete lesson across enrolled courses as the resume learning item, provides explainable next-step recommendations, and aggregates achievements and skills (verified in `test_progress.py` and `Progress.test.tsx`).
+7. **Idempotent Achievement Engine:** 6 default achievements are seeded and earned automatically upon meeting criteria. Duplicate achievements are prevented by composite primary key (verified in `test_progress.py`).
+8. **Automated Test Coverage:** 106/106 backend tests pass (`pytest` including 13 progress and mastery tests), 62/62 frontend tests pass (`vitest run` including 3 progress tests), `npm run build` succeeds cleanly, and `ruff` and `oxlint` pass with 0 errors (verified).
 
-### Required Tests
-- Lesson/module/course completion cascade tests.
-- Skill mastery calculation accuracy tests.
-- Achievement unlock trigger tests.
-- Dashboard data consistency tests.
-- Concurrent progress update tests (no race conditions).
-
-### Risks
-- Mastery calculation algorithm needs tuning with real usage data.
-- Achievement criteria may need revision after user feedback.
+### Test Status & Local Limitations
+- **SQLite Test Execution:** All 106 backend tests pass against SQLite. All 62 frontend tests pass. Production build succeeds.
+- **PostgreSQL 16 Migration Verification:** Alembic migration `004_progress_mastery` includes explicit enum creation, PostgreSQL `JSONB` support, foreign keys, and indexes. `alembic check` reports 0 schema drift.
+- **Deferred to Phase 7:** Creator Studio authoring UI, multi-version editorial review, and creator analytics.
 
 ---
 

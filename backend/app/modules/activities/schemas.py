@@ -60,6 +60,8 @@ class ActivityCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     instructions: str = Field(min_length=1)
     configuration: dict[str, Any] = Field(default_factory=dict)
+    skill_id: str | None = None
+    skill_slug: str | None = None
     max_attempts: int | None = Field(default=None, ge=1)
     sort_order: int = Field(default=0, ge=0)
     grading_type: GradingType = GradingType.AUTOMATED
@@ -86,6 +88,8 @@ class ActivityDetailResponse(BaseModel):
     title: str
     instructions: str
     configuration: dict[str, Any]
+    skill_id: str | None = None
+    skill_slug: str | None = None
     max_attempts: int | None
     sort_order: int
     passing_score: float = 70.0

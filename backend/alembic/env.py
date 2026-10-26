@@ -14,6 +14,7 @@ from app.config import settings
 from app.infrastructure.database import Base
 
 # Import all models so Alembic can detect them
+from app.modules.activities.models import Activity, Attempt, GradingConfig  # noqa: F401
 from app.modules.auth.models import OAuthAccount, RefreshToken, User, UserProfile  # noqa: F401
 from app.modules.courses.models import (  # noqa: F401
     Course,
@@ -22,6 +23,13 @@ from app.modules.courses.models import (  # noqa: F401
     Lesson,
     LessonBlock,
     Module,
+)
+from app.modules.progress.models import (  # noqa: F401
+    Achievement,
+    Enrollment,
+    LessonProgress,
+    SkillMastery,
+    UserAchievement,
 )
 from app.modules.skills.models import Discipline, Skill, SkillPrerequisite  # noqa: F401
 

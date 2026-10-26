@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Play,
@@ -9,24 +9,527 @@ import {
   ArrowRight,
   BookOpen,
   Code,
-  MessageSquare,
   Compass,
   CheckCircle2,
-  Terminal,
   ShieldCheck,
-  TrendingUp
+  TrendingUp,
+  Award,
+  Zap,
+  Trophy,
+  Lock,
+  RefreshCw,
+  FileQuestion,
+  Layers,
 } from 'lucide-react'
 import { SAMPLE_DASHBOARD_DATA } from '../data/dashboard'
-import { SAMPLE_COURSES } from '../data/courses'
+import type { DashboardSummary } from '../types/progress'
+import { progressApi } from '../services/progressApi'
+import { useAuth } from '../context/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { ProgressBar } from '../components/ui/ProgressBar'
 
 export const DashboardPage: React.FC = () => {
-  const data = SAMPLE_DASHBOARD_DATA
-  const recommendedCourses = SAMPLE_COURSES.slice(1, 4)
+  const { user } = useAuth()
+  const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [isDemo, setIsDemo] = useState<boolean>(false)
 
+  const loadDashboard = useCallback(async () => {
+    if (!user) {
+      setIsDemo(true)
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const data = await progressApi.getDashboardSummary()
+      setDashboardData(data)
+      setIsDemo(false)
+    } catch {
+      // Fallback to sample data if backend progress is unreachable
+      setIsDemo(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    loadDashboard()
+  }, [loadDashboard])
+
+  const learnerName = user?.display_name || user?.email?.split('@')[0] || SAMPLE_DASHBOARD_DATA.learnerName
+
+  const getAchievementIcon = (slug: string) => {
+    switch (slug) {
+      case 'first_lesson':
+        return <Award className="w-5 h-5 text-accent-cyan" />
+      case 'fast_learner':
+        return <Zap className="w-5 h-5 text-state-warning" />
+      case 'first_course':
+        return <Trophy className="w-5 h-5 text-accent-violet" />
+      case 'perfect_score':
+        return <Target className="w-5 h-5 text-state-error" />
+      case 'skill_master':
+        return <ShieldCheck className="w-5 h-5 text-state-success" />
+      case 'polymath':
+        return <Sparkles className="w-5 h-5 text-accent-violet" />
+      default:
+        return <Award className="w-5 h-5 text-accent-cyan" />
+    }
+  }
+
+  const getActivityTypeIcon = (type: string) => {
+    switch (type) {
+      case 'code_execution':
+        return <Code className="w-3.5 h-3.5 text-accent-violet" />
+      case 'single_choice':
+      case 'multiple_choice':
+        return <FileQuestion className="w-3.5 h-3.5 text-accent-cyan" />
+      case 'true_false':
+        return <CheckCircle2 className="w-3.5 h-3.5 text-state-success" />
+      default:
+        return <Layers className="w-3.5 h-3.5 text-text-muted" />
+    }
+  }
+
+  // Loading skeleton
+  if (loading) {
+    return (
+      <div className="space-y-8 animate-fadeIn p-4 sm:p-6">
+        <div className="h-10 w-72 rounded bg-bg-surface animate-pulse" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 h-72 rounded-2xl bg-bg-surface animate-pulse" />
+          <div className="h-72 rounded-2xl bg-bg-surface animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-24 rounded-xl bg-bg-surface animate-pulse" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // 1. Live Authenticated Dashboard
+  if (!isDemo && dashboardData) {
+    const resumeItem = dashboardData.resume_learning
+    const enrolledCourses = dashboardData.enrolled_courses || []
+    const achievements = dashboardData.achievements || []
+    const recommendations = dashboardData.recommendations || []
+    const recentAttempts = dashboardData.recent_attempts || []
+    const skills = dashboardData.skills_summary || []
+
+    const masteredSkills = skills.filter((s) => s.status === 'MASTERED')
+    const practicingSkills = skills.filter((s) => s.status === 'PRACTICING' || s.status === 'PROVISIONAL')
+
+    return (
+      <div className="space-y-8 animate-fadeIn">
+        {/* Welcome Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border-subtle pb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-text-primary tracking-tight">
+              Welcome back, {learnerName}
+            </h1>
+            <p className="text-sm text-text-secondary mt-1">
+              Live progression active. Every lesson and assessment attempt is verified server-side.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadDashboard}
+              leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Refresh
+            </Button>
+            <Link to="/explore">
+              <Button variant="outline" size="sm" leftIcon={<Compass className="w-4 h-4" />}>
+                Catalog
+              </Button>
+            </Link>
+            <Link to="/skills">
+              <Button variant="primary" size="sm" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                Skill Map
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Top Grid: Continue Learning Hero & Quick Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Resume Learning Card (2 cols) */}
+          <Card variant="elevated" className="lg:col-span-2 relative overflow-hidden flex flex-col justify-between p-6">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-accent-violet/5 rounded-full blur-3xl pointer-events-none" />
+
+            {resumeItem ? (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <Badge variant="cyan" size="sm" icon={<BookOpen className="w-3 h-3" />}>
+                      Active Course
+                    </Badge>
+                    <span className="text-xs font-mono text-text-muted">
+                      {resumeItem.progress_percentage}% completed
+                    </span>
+                  </div>
+
+                  <h2 className="text-xl font-bold text-text-primary mb-1">
+                    {resumeItem.course_title}
+                  </h2>
+                  <p className="text-sm text-text-secondary mb-3">
+                    {resumeItem.module_title}
+                  </p>
+
+                  <div className="p-4 rounded-xl bg-bg-surface/80 border border-border-subtle mb-6">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-text-primary mb-1">
+                      <Code className="w-4 h-4 text-accent-violet" />
+                      <span>Next Up: {resumeItem.lesson_title}</span>
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      Pick up directly where you left off. Complete all checkpoint activities to earn verified mastery.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-2 border-t border-border-subtle">
+                  <ProgressBar
+                    value={resumeItem.progress_percentage}
+                    label="Course Completion Progress"
+                    showPercentage
+                    variant="cyan"
+                    size="md"
+                  />
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-text-muted">
+                      Continue from {resumeItem.lesson_title}
+                    </span>
+                    <Link to={`/learn/${resumeItem.course_slug}/${resumeItem.lesson_slug}`}>
+                      <Button variant="primary" size="md" leftIcon={<Play className="w-4 h-4 fill-current" />}>
+                        Resume Learning
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="py-10 text-center space-y-4 flex flex-col items-center justify-center h-full">
+                <div className="w-12 h-12 rounded-full bg-accent-violet/10 text-accent-violet flex items-center justify-center">
+                  <Compass className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-text-primary">Ready to Begin Your Next Quest?</h3>
+                  <p className="text-xs text-text-secondary max-w-sm mx-auto mt-1">
+                    You do not have any courses in progress right now. Explore our cross-disciplinary catalog and enroll to start building evidence-backed skills.
+                  </p>
+                </div>
+                <Link to="/explore">
+                  <Button variant="primary" size="md" leftIcon={<Compass className="w-4 h-4" />}>
+                    Explore Courses
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </Card>
+
+          {/* Quick Stats Summary Card (1 col) */}
+          <Card variant="surface" className="flex flex-col justify-between p-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-text-muted flex items-center gap-2">
+                  <Target className="w-4 h-4 text-accent-violet" />
+                  <span>Progression Overview</span>
+                </h3>
+                <Badge variant="emerald" size="sm">
+                  Live
+                </Badge>
+              </div>
+
+              <div className="space-y-4 py-2">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-bg-inset border border-border-subtle">
+                  <div className="flex items-center gap-2 text-xs text-text-secondary">
+                    <BookOpen className="w-4 h-4 text-accent-violet" />
+                    <span>Enrolled Courses</span>
+                  </div>
+                  <span className="font-mono font-bold text-text-primary text-base">
+                    {enrolledCourses.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-lg bg-bg-inset border border-border-subtle">
+                  <div className="flex items-center gap-2 text-xs text-text-secondary">
+                    <ShieldCheck className="w-4 h-4 text-state-success" />
+                    <span>Mastered Skills</span>
+                  </div>
+                  <span className="font-mono font-bold text-text-primary text-base">
+                    {masteredSkills.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-lg bg-bg-inset border border-border-subtle">
+                  <div className="flex items-center gap-2 text-xs text-text-secondary">
+                    <TrendingUp className="w-4 h-4 text-accent-cyan" />
+                    <span>Skills In Progress</span>
+                  </div>
+                  <span className="font-mono font-bold text-text-primary text-base">
+                    {practicingSkills.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-lg bg-bg-inset border border-border-subtle">
+                  <div className="flex items-center gap-2 text-xs text-text-secondary">
+                    <Award className="w-4 h-4 text-state-warning" />
+                    <span>Achievements</span>
+                  </div>
+                  <span className="font-mono font-bold text-text-primary text-base">
+                    {achievements.filter((a) => a.earned).length} / {achievements.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-border-subtle text-center">
+              <Link to="/skills" className="text-xs font-medium text-accent-violet hover:underline inline-flex items-center gap-1">
+                <span>Inspect full taxonomy skill tree</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+          </Card>
+        </div>
+
+        {/* Active Enrolled Courses Section */}
+        {enrolledCourses.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-text-primary">Enrolled Courses</h2>
+                <p className="text-xs text-text-secondary">
+                  Track your progress and access interactive lesson workspaces
+                </p>
+              </div>
+              <span className="text-xs font-mono text-text-muted">
+                {enrolledCourses.length} {enrolledCourses.length === 1 ? 'Course' : 'Courses'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {enrolledCourses.map((c) => (
+                <Card key={c.id} variant="elevated" className="p-5 flex flex-col justify-between space-y-4 hover:border-accent-violet/40 transition-colors">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-mono text-text-muted">
+                        Version {c.version_number}
+                      </span>
+                      <Badge
+                        variant={c.status === 'COMPLETED' ? 'emerald' : c.status === 'IN_PROGRESS' ? 'violet' : 'cyan'}
+                        size="sm"
+                      >
+                        {c.status}
+                      </Badge>
+                    </div>
+
+                    <h3 className="text-base font-bold text-text-primary line-clamp-1">
+                      {c.course_title}
+                    </h3>
+                    <p className="text-xs text-text-muted font-mono mt-1">
+                      {c.lessons_completed} of {c.lessons_total} lessons completed
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 pt-2 border-t border-border-subtle">
+                    <ProgressBar
+                      value={c.progress_percentage}
+                      variant={c.status === 'COMPLETED' ? 'emerald' : 'violet'}
+                      size="sm"
+                    />
+
+                    <div className="flex items-center justify-between pt-1">
+                      <Link to={`/courses/${c.course_slug}`} className="text-xs text-text-muted hover:text-text-primary">
+                        Syllabus
+                      </Link>
+                      <Link to={`/learn/${c.course_slug}`}>
+                        <Button variant="primary" size="sm" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                          {c.status === 'COMPLETED' ? 'Review' : 'Continue'}
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recommendations & Recent Attempts Strip */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Next-Step Recommendations */}
+          <Card variant="surface" className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-accent-violet" />
+                <span>Next-Step Recommendations</span>
+              </h3>
+              <Badge variant="violet" size="sm">
+                Deterministic
+              </Badge>
+            </div>
+
+            {recommendations.length > 0 ? (
+              <div className="space-y-3">
+                {recommendations.map((rec, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-xl bg-bg-base border border-border-subtle flex items-start justify-between gap-3"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-accent-violet/10 text-accent-violet font-semibold">
+                          {rec.type.replace('_', ' ')}
+                        </span>
+                        <h4 className="text-xs font-bold text-text-primary truncate">
+                          {rec.title}
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-text-secondary leading-snug">
+                        {rec.reason}
+                      </p>
+                    </div>
+
+                    {rec.course_slug && (
+                      <Link to={`/courses/${rec.course_slug}`} className="shrink-0 self-center">
+                        <Button variant="outline" size="sm" className="text-xs">
+                          Go
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted py-6 text-center">
+                No new recommendations. Continue your current enrolled coursework!
+              </p>
+            )}
+          </Card>
+
+          {/* Recent Assessment Attempts */}
+          <Card variant="surface" className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                <Target className="w-4 h-4 text-accent-cyan" />
+                <span>Recent Assessment Attempts</span>
+              </h3>
+              <span className="text-xs font-mono text-text-muted">
+                {recentAttempts.length} logged
+              </span>
+            </div>
+
+            {recentAttempts.length > 0 ? (
+              <div className="space-y-2">
+                {recentAttempts.slice(0, 5).map((att) => (
+                  <div
+                    key={att.attempt_id}
+                    className="p-3 rounded-lg bg-bg-base border border-border-subtle flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-1.5 rounded-md bg-bg-surface shrink-0">
+                        {getActivityTypeIcon(att.activity_type)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-text-primary truncate">
+                          {att.activity_title}
+                        </p>
+                        <span className="text-[10px] font-mono text-text-muted">
+                          Score: {att.score}/{att.max_score}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Badge variant={att.passed ? 'emerald' : 'amber'} size="sm">
+                      {att.passed ? 'Passed' : 'Needs Review'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted py-6 text-center">
+                No interactive submissions recorded yet. Open a lesson to practice!
+              </p>
+            )}
+          </Card>
+        </div>
+
+        {/* Achievements Shelf */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
+                <Award className="w-5 h-5 text-state-warning" />
+                <span>Achievements Shelf</span>
+              </h2>
+              <p className="text-xs text-text-secondary">
+                Milestones unlocked through verified learning progress and assessment performance
+              </p>
+            </div>
+            <span className="text-xs font-mono text-text-muted">
+              {achievements.filter((a) => a.earned).length} of {achievements.length} Unlocked
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {achievements.map((ach) => (
+              <Card
+                key={ach.id}
+                variant={ach.earned ? 'elevated' : 'base'}
+                className={`p-4 flex flex-col items-center text-center space-y-2 transition-all ${
+                  ach.earned
+                    ? 'border-state-warning/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                    : 'opacity-50 border-dashed border-border-subtle'
+                }`}
+              >
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                    ach.earned
+                      ? 'bg-state-warning/15 text-state-warning'
+                      : 'bg-bg-surface text-text-muted'
+                  }`}
+                >
+                  {ach.earned ? getAchievementIcon(ach.slug) : <Lock className="w-5 h-5" />}
+                </div>
+
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-text-primary line-clamp-1">
+                    {ach.name}
+                  </h4>
+                  <p className="text-[10px] text-text-muted line-clamp-2 leading-tight">
+                    {ach.description}
+                  </p>
+                </div>
+
+                {ach.earned ? (
+                  <span className="text-[9px] font-mono text-state-success font-semibold uppercase tracking-wider">
+                    Unlocked
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-mono text-text-muted uppercase tracking-wider">
+                    Locked
+                  </span>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 2. Fallback / Demonstration Preview (for logged-out visitors)
+  const data = SAMPLE_DASHBOARD_DATA
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Demo Banner */}
@@ -34,12 +537,14 @@ export const DashboardPage: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-4 h-4 text-accent-violet shrink-0" />
           <span>
-            <strong className="text-text-primary">Learner Preview:</strong> This dashboard is populated with realistic demonstration data for <strong className="text-text-primary">{data.learnerName}</strong>.
+            <strong className="text-text-primary">Demonstration Preview:</strong> You are viewing sample data. Sign in to track your persistent learning progress and earn verified skill mastery.
           </span>
         </div>
-        <Badge variant="violet" size="sm">
-          Sample Data
-        </Badge>
+        <Link to="/login">
+          <Button variant="primary" size="sm">
+            Sign In
+          </Button>
+        </Link>
       </div>
 
       {/* Hero / Welcome Area */}
@@ -49,7 +554,7 @@ export const DashboardPage: React.FC = () => {
             Welcome back, {data.learnerName}
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            Pick up right where you left off. Today is an ideal day to sharpen your core web structure skills.
+            Explore how SkillVerse tracks multi-tier mastery and course progress.
           </p>
         </div>
 
@@ -69,8 +574,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* Top Grid: Continue Learning Hero & Weekly Goal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Continue Learning Card (2 cols) */}
-        <Card variant="elevated" className="lg:col-span-2 relative overflow-hidden flex flex-col justify-between">
+        <Card variant="elevated" className="lg:col-span-2 relative overflow-hidden flex flex-col justify-between p-6">
           <div className="absolute top-0 right-0 w-96 h-96 bg-accent-violet/5 rounded-full blur-3xl pointer-events-none" />
 
           <div>
@@ -123,8 +627,7 @@ export const DashboardPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Weekly Goal & Streak Card (1 col) */}
-        <Card variant="surface" className="flex flex-col justify-between">
+        <Card variant="surface" className="flex flex-col justify-between p-6">
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted flex items-center gap-2">
@@ -146,35 +649,15 @@ export const DashboardPage: React.FC = () => {
                 Interactive sessions completed this week
               </p>
             </div>
-
-            {/* Session Indicator Dots */}
-            <div className="grid grid-cols-5 gap-2 my-4">
-              {Array.from({ length: data.weeklyGoal.targetSessions }).map((_, index) => {
-                const isCompleted = index < data.weeklyGoal.completedSessions
-                return (
-                  <div
-                    key={index}
-                    className={`h-9 rounded-lg flex items-center justify-center border text-xs font-mono font-medium transition-all ${
-                      isCompleted
-                        ? 'bg-accent-violet/20 border-accent-violet text-accent-violet'
-                        : 'bg-bg-inset border-border-subtle text-text-muted'
-                    }`}
-                    title={isCompleted ? `Session ${index + 1}: Completed` : `Session ${index + 1}: Pending`}
-                  >
-                    {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : `S${index + 1}`}
-                  </div>
-                )
-              })}
-            </div>
           </div>
 
           <div className="pt-4 border-t border-border-subtle text-xs text-text-secondary text-center">
-            2 more interactive sessions to hit your target before Sunday.
+            Log in to record persistent streaks and verified session achievements.
           </div>
         </Card>
       </div>
 
-      {/* Stats Summary Strip */}
+      {/* Stats Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card variant="base" className="p-4 flex flex-col justify-center">
           <div className="text-xs font-medium text-text-muted mb-1 flex items-center gap-1.5">
@@ -222,7 +705,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Cross-Disciplinary Platform Vision Callout */}
-      <Card variant="elevated" className="border-accent-violet/30 bg-gradient-to-r from-bg-elevated via-bg-surface/80 to-bg-elevated">
+      <Card variant="elevated" className="border-accent-violet/30 bg-gradient-to-r from-bg-elevated via-bg-surface/80 to-bg-elevated p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <Badge variant="violet" size="sm">
@@ -238,7 +721,7 @@ export const DashboardPage: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
             <div className="p-3 rounded-lg bg-bg-base/80 border border-border-subtle flex items-center gap-2.5">
-              <Terminal className="w-4 h-4 text-accent-violet shrink-0" />
+              <Code className="w-4 h-4 text-accent-violet shrink-0" />
               <div className="text-xs">
                 <p className="font-semibold text-text-primary">Code Sandbox</p>
                 <p className="text-[10px] text-text-muted">Automated verification</p>
@@ -246,7 +729,7 @@ export const DashboardPage: React.FC = () => {
             </div>
 
             <div className="p-3 rounded-lg bg-bg-base/80 border border-border-subtle flex items-center gap-2.5">
-              <MessageSquare className="w-4 h-4 text-accent-cyan shrink-0" />
+              <BookOpen className="w-4 h-4 text-accent-cyan shrink-0" />
               <div className="text-xs">
                 <p className="font-semibold text-text-primary">Simulations</p>
                 <p className="text-[10px] text-text-muted">Workplace role-play</p>
@@ -263,88 +746,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       </Card>
-
-      {/* Two Column Layout: Recommended Courses & Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recommended Courses (2 cols) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-text-primary">Recommended Courses</h2>
-              <p className="text-xs text-text-secondary">Explore complementary skills to broaden your portfolio</p>
-            </div>
-            <Link to="/explore" className="text-xs font-medium text-accent-violet hover:underline flex items-center gap-1">
-              <span>View all 5 courses</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {recommendedCourses.map((course) => (
-              <Card key={course.id} variant="elevated" hoverEffect className="flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="cyan" size="sm">
-                      {course.categoryName}
-                    </Badge>
-                    <span className="text-xs font-mono text-text-muted">{course.estimatedHours}h total</span>
-                  </div>
-                  <h3 className="text-base font-semibold text-text-primary mb-1">
-                    {course.title}
-                  </h3>
-                  <p className="text-xs text-text-secondary line-clamp-2 mb-4">
-                    {course.shortDescription}
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-border-subtle flex items-center justify-between">
-                  <span className="text-xs text-text-muted font-medium">
-                    {course.modulesCount} modules • {course.lessonsCount} lessons
-                  </span>
-                  <Link to={`/courses/${course.slug}`}>
-                    <Button variant="outline" size="sm">
-                      Overview
-                    </Button>
-                  </Link>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Activity Log (1 col) */}
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-bold text-text-primary">Recent Practice</h2>
-            <p className="text-xs text-text-secondary">Sample activity verification history</p>
-          </div>
-
-          <Card variant="surface" className="p-0 overflow-hidden">
-            <div className="divide-y divide-border-subtle">
-              {data.recentActivities.map((act) => (
-                <div key={act.id} className="p-4 hover:bg-bg-elevated/40 transition-colors">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-semibold text-text-primary">
-                      {act.title}
-                    </p>
-                    {act.score !== undefined && (
-                      <span className="text-xs font-mono font-bold text-state-success">
-                        {act.score}%
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-text-muted mt-0.5 truncate">
-                    {act.courseTitle}
-                  </p>
-                  <p className="text-[10px] text-text-muted font-mono mt-1">
-                    {act.timestamp}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </div>
     </div>
   )
 }

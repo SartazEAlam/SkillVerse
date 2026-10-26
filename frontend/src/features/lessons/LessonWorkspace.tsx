@@ -3,7 +3,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { AlertCircle, RefreshCw, Compass, ArrowLeft, BookOpen, Play } from 'lucide-react'
 import type { ApiCourseDetail, ApiLessonDetail } from '../../types/catalog'
 import type { FlattenedLesson } from '../../types/lesson'
+import type { Enrollment } from '../../types/progress'
 import { courseApi } from '../../services/courseApi'
+import { progressApi } from '../../services/progressApi'
+import { useAuth } from '../../context/AuthContext'
 import { LessonWorkspaceHeader } from './LessonWorkspaceHeader'
 import { LessonSidebar } from './LessonSidebar'
 import { LessonContent } from './LessonContent'
@@ -19,6 +22,11 @@ export const LessonWorkspace: React.FC = () => {
   const [error, setError] = useState<{ message: string; isNotFound?: boolean } | null>(null)
   const [isDemo, setIsDemo] = useState<boolean>(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false)
+
+  // Phase 6 Progression
+  const { user } = useAuth()
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
+  const [completedLessonSlugs, setCompletedLessonSlugs] = useState<Set<string>>(new Set())
 
   // Keep reference to abort controller for stale response protection
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -257,6 +265,35 @@ export const LessonWorkspace: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [courseSlug, prevLesson, nextLesson, navigate])
 
+  const currentLessonId = currentLesson?.id
+
+  // 5. Track lesson progress and completion via progression API
+  const refreshProgress = useCallback(
+    async (justCompletedSlug?: string) => {
+      if (justCompletedSlug) {
+        setCompletedLessonSlugs((prev) => new Set([...prev, justCompletedSlug]))
+      }
+      if (!courseSlug || !user) return
+      try {
+        const enrollments = await progressApi.getEnrollments()
+        const match = enrollments.find((e) => e.course_slug === courseSlug)
+        setEnrollment(match || null)
+
+        if (match && currentLessonId) {
+          // Automatically mark lesson as started
+          await progressApi.startLesson(match.id, currentLessonId).catch(() => {})
+        }
+      } catch {
+        // Progress API unavailable or offline
+      }
+    },
+    [courseSlug, currentLessonId, user]
+  )
+
+  useEffect(() => {
+    refreshProgress()
+  }, [refreshProgress])
+
   // ── Render States ────────────────────────────────────────────────────────
 
   // Loading State
@@ -398,6 +435,7 @@ export const LessonWorkspace: React.FC = () => {
           courseSlug={course.slug}
           modules={course.modules}
           currentLessonSlug={currentLesson.slug}
+          completedLessonSlugs={completedLessonSlugs}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
         />
@@ -415,6 +453,8 @@ export const LessonWorkspace: React.FC = () => {
             moduleTitle={currentModuleTitle}
             prevLesson={prevLesson}
             nextLesson={nextLesson}
+            enrollmentId={enrollment?.id}
+            onProgressUpdated={refreshProgress}
           />
         </main>
       </div>

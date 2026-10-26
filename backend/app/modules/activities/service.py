@@ -25,7 +25,8 @@ from app.modules.activities.schemas import (
     AttemptListResponse,
     AttemptResponse,
 )
-from app.modules.courses.models import Lesson
+from app.modules.courses.models import Course, CourseSkill, CourseVersion, Lesson, Module
+from app.modules.skills.models import Skill
 
 logger = logging.getLogger("skillverse.activities")
 
@@ -64,6 +65,9 @@ class ActivityService:
             return None
 
         passing_score = activity.grading_config.passing_score if activity.grading_config else 70.0
+        cfg = activity.configuration if isinstance(activity.configuration, dict) else {}
+        skill_id = cfg.get("skill_id")
+        skill_slug = cfg.get("skill_slug") or cfg.get("skill")
 
         return ActivityDetailResponse(
             id=activity.id,
@@ -72,6 +76,8 @@ class ActivityService:
             title=activity.title,
             instructions=activity.instructions,
             configuration=activity.configuration,
+            skill_id=skill_id,
+            skill_slug=skill_slug,
             max_attempts=activity.max_attempts,
             sort_order=activity.sort_order,
             passing_score=passing_score,
@@ -148,6 +154,7 @@ class ActivityService:
 
     def create_activity(self, data: ActivityCreate) -> Activity:
         """Create an activity aggregate with its confidential grading config."""
+        lesson: Lesson | None = None
         if data.lesson_id is not None:
             lesson = self.db.get(Lesson, data.lesson_id)
             if not lesson:
@@ -157,12 +164,117 @@ class ActivityService:
                     status_code=404,
                 )
 
+        config = dict(data.configuration)
+        raw_skill_id = data.skill_id if data.skill_id is not None else config.get("skill_id")
+        if isinstance(raw_skill_id, str):
+            raw_skill_id = raw_skill_id.strip() or None
+
+        raw_skill_slug = (
+            data.skill_slug
+            if data.skill_slug is not None
+            else (config.get("skill_slug") or config.get("skill"))
+        )
+        if isinstance(raw_skill_slug, str):
+            raw_skill_slug = raw_skill_slug.strip().lower() or None
+
+        if raw_skill_id is not None or raw_skill_slug is not None:
+            if not lesson:
+                raise ActivityServiceError(
+                    "Cannot assign a skill tag to an activity without a valid lesson.",
+                    code="LESSON_REQUIRED_FOR_SKILL",
+                    status_code=400,
+                )
+
+            # Find course containing this lesson
+            stmt = (
+                select(Course)
+                .join(CourseVersion, Course.id == CourseVersion.course_id)
+                .join(Module, CourseVersion.id == Module.course_version_id)
+                .join(Lesson, Module.id == Lesson.module_id)
+                .where(Lesson.id == lesson.id)
+            )
+            course = self.db.scalars(stmt).first()
+            if not course:
+                raise ActivityServiceError(
+                    f"Lesson '{lesson.id}' is not linked to any active course.",
+                    code="COURSE_NOT_FOUND",
+                    status_code=400,
+                )
+
+            skill_by_id: Skill | None = None
+            if raw_skill_id is not None:
+                skill_by_id = self.db.scalars(
+                    select(Skill).where(Skill.id == str(raw_skill_id), Skill.is_active.is_(True))
+                ).first()
+                if not skill_by_id:
+                    inactive = self.db.scalars(select(Skill).where(Skill.id == str(raw_skill_id))).first()
+                    if inactive and not inactive.is_active:
+                        raise ActivityServiceError(
+                            f"Skill with ID '{raw_skill_id}' is inactive.",
+                            code="INACTIVE_SKILL",
+                            status_code=400,
+                        )
+                    raise ActivityServiceError(
+                        f"Skill with ID '{raw_skill_id}' not found.",
+                        code="SKILL_NOT_FOUND",
+                        status_code=404,
+                    )
+
+            skill_by_slug: Skill | None = None
+            if raw_skill_slug is not None:
+                skill_by_slug = self.db.scalars(
+                    select(Skill).where(Skill.slug == str(raw_skill_slug).strip().lower(), Skill.is_active.is_(True))
+                ).first()
+                if not skill_by_slug:
+                    inactive = self.db.scalars(
+                        select(Skill).where(Skill.slug == str(raw_skill_slug).strip().lower())
+                    ).first()
+                    if inactive and not inactive.is_active:
+                        raise ActivityServiceError(
+                            f"Skill with slug '{raw_skill_slug}' is inactive.",
+                            code="INACTIVE_SKILL",
+                            status_code=400,
+                        )
+                    raise ActivityServiceError(
+                        f"Skill with slug '{raw_skill_slug}' not found.",
+                        code="SKILL_NOT_FOUND",
+                        status_code=404,
+                    )
+
+            if skill_by_id and skill_by_slug and skill_by_id.id != skill_by_slug.id:
+                raise ActivityServiceError(
+                    f"Conflicting skill references: skill_id '{raw_skill_id}' ({skill_by_id.slug}) does not match skill_slug '{raw_skill_slug}'.",
+                    code="CONFLICTING_SKILL_TAGS",
+                    status_code=400,
+                )
+
+            target_skill = skill_by_id or skill_by_slug
+            assert target_skill is not None
+
+            # Verify target_skill is associated with the course
+            is_course_skill = self.db.scalar(
+                select(func.count(CourseSkill.skill_id)).where(
+                    CourseSkill.course_id == course.id,
+                    CourseSkill.skill_id == target_skill.id,
+                )
+            )
+            if not is_course_skill or is_course_skill == 0:
+                raise ActivityServiceError(
+                    f"Skill '{target_skill.name}' ({target_skill.slug}) is not associated with course '{course.title}'.",
+                    code="UNRELATED_SKILL",
+                    status_code=400,
+                )
+
+            # Persist canonical consistent tags in configuration
+            config["skill_id"] = target_skill.id
+            config["skill_slug"] = target_skill.slug
+
         activity = Activity(
             lesson_id=data.lesson_id,
             activity_type=data.activity_type.value,
             title=data.title,
             instructions=data.instructions,
-            configuration=data.configuration,
+            configuration=config,
             max_attempts=data.max_attempts,
             sort_order=data.sort_order,
         )
@@ -260,6 +372,20 @@ class ActivityService:
                 code="CONCURRENT_SUBMISSION",
                 status_code=409,
             ) from err
+
+        # Trigger progression, skill mastery, and achievement evaluations
+        try:
+            from app.modules.progress.service import ProgressionService
+
+            ProgressionService(self.db).handle_activity_completed(attempt)
+        except Exception:
+            self.db.rollback()
+            logger.warning("Progression cascade initial attempt failed for attempt '%s', retrying once...", attempt.id)
+            try:
+                ProgressionService(self.db).handle_activity_completed(attempt)
+            except Exception:
+                self.db.rollback()
+                logger.exception("Failed to update progression cascade for attempt '%s'", attempt.id)
 
         # 4. Compute retry status
         total_now = existing_count + 1

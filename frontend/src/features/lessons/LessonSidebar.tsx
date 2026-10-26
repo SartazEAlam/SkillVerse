@@ -7,6 +7,7 @@ interface LessonSidebarProps {
   courseSlug: string
   modules: ApiModuleDetail[]
   currentLessonSlug: string
+  completedLessonSlugs?: Set<string>
   isOpen: boolean
   onClose: () => void
 }
@@ -15,6 +16,7 @@ export const LessonSidebar: React.FC<LessonSidebarProps> = ({
   courseSlug,
   modules,
   currentLessonSlug,
+  completedLessonSlugs,
   isOpen,
   onClose,
 }) => {
@@ -142,6 +144,7 @@ export const LessonSidebar: React.FC<LessonSidebarProps> = ({
                   <div className="mt-1 pl-2 space-y-1">
                     {sortedLessons.map((lesson) => {
                       const isCurrent = lesson.slug === currentLessonSlug
+                      const isCompleted = completedLessonSlugs?.has(lesson.slug)
 
                       return (
                         <Link
@@ -152,11 +155,15 @@ export const LessonSidebar: React.FC<LessonSidebarProps> = ({
                           className={`group flex items-start gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors focus-visible:ring-1 focus-visible:ring-accent-violet ${
                             isCurrent
                               ? 'bg-accent-violet/15 text-accent-violet font-semibold border-l-2 border-accent-violet shadow-xs'
+                              : isCompleted
+                              ? 'text-text-primary hover:bg-bg-surface/80'
                               : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface/80'
                           }`}
                         >
                           <div className="shrink-0 mt-0.5">
-                            {isCurrent ? (
+                            {isCompleted ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-state-success" />
+                            ) : isCurrent ? (
                               <CheckCircle2 className="w-3.5 h-3.5 text-accent-violet" />
                             ) : (
                               <FileText className="w-3.5 h-3.5 text-text-muted group-hover:text-text-secondary" />

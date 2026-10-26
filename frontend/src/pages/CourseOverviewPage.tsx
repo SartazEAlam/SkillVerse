@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Compass,
   Clock,
@@ -12,19 +12,27 @@ import {
   MessageSquare,
   FileQuestion,
   Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
+  Lock,
 } from 'lucide-react'
 import { SAMPLE_COURSES } from '../data/courses'
 import type { ActivityType } from '../types/course'
+import type { CoursePrerequisites, Enrollment } from '../types/progress'
 import { Card } from '../components/ui/Card'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { ProgressBar } from '../components/ui/ProgressBar'
+import { useAuth } from '../context/AuthContext'
+import { progressApi } from '../services/progressApi'
 
 export const CourseOverviewPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>()
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
   const course = SAMPLE_COURSES.find((c) => c.slug === slug)
 
-  // Track expanded modules (all expanded by default for discoverability)
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
     'mod-html-structure': true,
     'mod-css-layouts': true,
@@ -38,9 +46,70 @@ export const CourseOverviewPage: React.FC = () => {
     'mod-design-1': true,
     'mod-design-2': true,
     'mod-think-1': true,
-    'mod-think-2': true
+    'mod-think-2': true,
   })
 
+  // Phase 6 progression states
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
+  const [prerequisites, setPrerequisites] = useState<CoursePrerequisites | null>(null)
+  const [isEnrolling, setIsEnrolling] = useState<boolean>(false)
+  const [enrollError, setEnrollError] = useState<string | null>(null)
+
+  const loadProgressData = useCallback(async () => {
+    if (!slug || !user) {
+      setEnrollment(null)
+      setPrerequisites(null)
+      return
+    }
+
+    try {
+      // 1. Fetch user enrollments
+      const enrollments = await progressApi.getEnrollments()
+      const match = enrollments.find((e) => e.course_slug === slug)
+      setEnrollment(match || null)
+
+      // 2. Fetch prerequisite requirements
+      try {
+        const prereqs = await progressApi.checkPrerequisites(slug)
+        setPrerequisites(prereqs)
+      } catch {
+        // Fallback for courses not yet in backend DB
+        setPrerequisites(null)
+      }
+    } catch {
+      // Failed to load progress (e.g. offline)
+    }
+  }, [slug, user])
+
+  useEffect(() => {
+    loadProgressData()
+  }, [loadProgressData])
+
+  const handleEnroll = async () => {
+    if (!slug) return
+    if (!user) {
+      navigate(`/login?redirect=/courses/${slug}`)
+      return
+    }
+
+    setIsEnrolling(true)
+    setEnrollError(null)
+
+    try {
+      const newEnrollment = await progressApi.enroll(slug)
+      setEnrollment(newEnrollment)
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string; details?: { unmet_prerequisites?: string[] } }
+      const unmet = apiErr.details?.unmet_prerequisites
+      if (unmet && unmet.length > 0) {
+        setEnrollError(`Prerequisite skills required: ${unmet.join(', ')}`)
+      } else {
+        setEnrollError(apiErr.message || 'Unable to complete enrollment. Please try again.')
+      }
+    } finally {
+      setIsEnrolling(false)
+    }
+  }
 
   if (!course) {
     return (
@@ -61,12 +130,11 @@ export const CourseOverviewPage: React.FC = () => {
   const toggleModule = (modId: string) => {
     setExpandedModules((prev) => ({
       ...prev,
-      [modId]: !prev[modId]
+      [modId]: !prev[modId],
     }))
   }
 
   const getActivityIcon = (type: ActivityType) => {
-
     switch (type) {
       case 'code_exercise':
         return <Terminal className="w-3.5 h-3.5 text-accent-violet" />
@@ -93,6 +161,8 @@ export const CourseOverviewPage: React.FC = () => {
         return 'Conceptual Reading'
     }
   }
+
+  const isEligible = prerequisites ? prerequisites.eligible : true
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -124,6 +194,15 @@ export const CourseOverviewPage: React.FC = () => {
                 <Clock className="w-3 h-3" />
                 {course.estimatedHours} hours total
               </span>
+              {enrollment && (
+                <Badge
+                  variant={enrollment.status === 'COMPLETED' ? 'emerald' : 'violet'}
+                  size="sm"
+                  icon={<CheckCircle2 className="w-3 h-3" />}
+                >
+                  {enrollment.status === 'COMPLETED' ? 'Completed' : 'Enrolled'}
+                </Badge>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-extrabold text-text-primary tracking-tight">
@@ -150,7 +229,7 @@ export const CourseOverviewPage: React.FC = () => {
           </div>
 
           {/* Primary Action Box */}
-          <div className="lg:w-72 shrink-0 p-5 rounded-xl bg-bg-surface border border-border-medium space-y-4">
+          <div className="lg:w-80 shrink-0 p-5 rounded-xl bg-bg-surface border border-border-medium space-y-4 shadow-lg">
             <div>
               <p className="text-xs uppercase font-mono text-text-muted tracking-wider">
                 Curriculum Structure
@@ -160,28 +239,102 @@ export const CourseOverviewPage: React.FC = () => {
               </p>
             </div>
 
-            <Link
-              to={`/learn/${course.slug}`}
-              className="w-full block"
-            >
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
-                leftIcon={<Play className="w-4 h-4 fill-current" />}
-              >
-                Start Course Preview
-              </Button>
-            </Link>
+            {/* Enrolled Status / Action */}
+            {enrollment ? (
+              <div className="space-y-3">
+                <ProgressBar
+                  value={enrollment.progress_percentage}
+                  label="Course Completion"
+                  showPercentage
+                  variant={enrollment.status === 'COMPLETED' ? 'emerald' : 'violet'}
+                  size="md"
+                />
+                <p className="text-xs text-text-muted font-mono">
+                  {enrollment.lessons_completed} of {enrollment.lessons_total} lessons completed
+                </p>
+                <Link to={`/learn/${course.slug}`} className="w-full block">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="w-full"
+                    leftIcon={<Play className="w-4 h-4 fill-current" />}
+                  >
+                    {enrollment.status === 'COMPLETED' ? 'Review Course' : 'Continue Course'}
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Prerequisite warning banner if ineligible */}
+                {!isEligible && prerequisites && (
+                  <div className="p-3 rounded-lg bg-state-warning/10 border border-state-warning/30 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-semibold text-state-warning">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Prerequisites Incomplete</span>
+                    </div>
+                    <p className="text-text-secondary text-[11px]">
+                      Required skills before enrolling:
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {prerequisites.prerequisites
+                        .filter((p) => !p.satisfied)
+                        .map((p) => (
+                          <span
+                            key={p.skill_id}
+                            className="px-2 py-0.5 rounded bg-bg-base border border-state-warning/40 font-mono text-[10px] text-text-primary"
+                          >
+                            {p.skill_name}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
 
+                {enrollError && (
+                  <div className="p-2.5 rounded-lg bg-state-error/10 border border-state-error/30 text-xs text-state-error">
+                    {enrollError}
+                  </div>
+                )}
 
-            <div className="flex items-start gap-2 text-[11px] text-text-muted leading-tight">
+                {user ? (
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="w-full"
+                    onClick={handleEnroll}
+                    isLoading={isEnrolling}
+                    disabled={!isEligible}
+                    leftIcon={!isEligible ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                  >
+                    {!isEligible ? 'Prerequisites Required' : 'Enroll in Course'}
+                  </Button>
+                ) : (
+                  <Link to={`/login?redirect=/courses/${course.slug}`} className="w-full block">
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      className="w-full"
+                      leftIcon={<Play className="w-4 h-4 fill-current" />}
+                    >
+                      Sign In to Enroll
+                    </Button>
+                  </Link>
+                )}
+
+                <Link to={`/learn/${course.slug}`} className="w-full block">
+                  <Button variant="outline" size="sm" className="w-full" leftIcon={<Play className="w-3.5 h-3.5 fill-current" />}>
+                    Start Course Preview
+                  </Button>
+                </Link>
+              </div>
+            )}
+
+            <div className="flex items-start gap-2 text-[11px] text-text-muted leading-tight pt-1 border-t border-border-subtle">
               <Sparkles className="w-3.5 h-3.5 text-accent-cyan shrink-0 mt-0.5" />
               <span>
-                Universal lesson workspace enabled. Click to enter the interactive learning environment.
+                Interactive activities, live code execution, and evidence-backed skill mastery verified server-side.
               </span>
             </div>
-
           </div>
         </div>
       </Card>
@@ -248,10 +401,10 @@ export const CourseOverviewPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-mono text-text-muted hidden sm:inline-block">
-                      {module.lessons.length} lessons
+                    <span className="text-xs font-mono text-text-muted hidden sm:inline">
+                      {module.lessons.length} {module.lessons.length === 1 ? 'Lesson' : 'Lessons'}
                     </span>
-                    <div className="p-1 rounded-md bg-bg-surface text-text-muted">
+                    <div className="p-1.5 rounded-lg bg-bg-surface text-text-muted">
                       {isExpanded ? (
                         <ChevronUp className="w-4 h-4" />
                       ) : (
@@ -263,47 +416,48 @@ export const CourseOverviewPage: React.FC = () => {
 
                 {/* Lessons List inside Module */}
                 {isExpanded && (
-                  <div className="border-t border-border-subtle bg-bg-inset/40 divide-y divide-border-subtle/50">
+                  <div className="border-t border-border-subtle bg-bg-surface/30 divide-y divide-border-subtle">
                     {module.lessons.map((lesson, lIdx) => (
                       <div
                         key={lesson.id}
-                        className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-bg-surface/30 transition-colors"
+                        className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-bg-surface/60 transition-colors"
                       >
                         <div className="flex items-start gap-3">
-                          <span className="w-6 h-6 rounded-md bg-bg-surface text-text-muted text-xs font-mono flex items-center justify-center shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-bg-surface border border-border-subtle flex items-center justify-center shrink-0 mt-0.5 text-xs font-mono text-text-muted">
                             {lIdx + 1}
-                          </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-xs sm:text-sm font-semibold text-text-primary">
-                                {lesson.title}
-                              </h4>
-                            </div>
-                            <p className="text-xs text-text-secondary mt-0.5 max-w-xl">
+                          </div>
+
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-semibold text-text-primary">
+                              {lesson.title}
+                            </h4>
+                            <p className="text-xs text-text-secondary max-w-xl">
                               {lesson.description}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3 shrink-0 pl-9 sm:pl-0">
-                          <span
-                            className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded-md bg-bg-surface border border-border-subtle text-text-secondary"
-                            title={`Activity Type: ${getActivityLabel(lesson.activityType)}`}
-                          >
+                        <div className="flex items-center gap-3 shrink-0 sm:self-center ml-9 sm:ml-0">
+                          <div className="flex items-center gap-1.5 text-xs font-mono text-text-muted">
                             {getActivityIcon(lesson.activityType)}
                             <span>{getActivityLabel(lesson.activityType)}</span>
-                          </span>
+                          </div>
 
                           <span className="text-xs font-mono text-text-muted">
                             {lesson.estimatedMinutes}m
                           </span>
 
-                          <Link to={`/learn/${course.slug}/${lesson.slug}`}>
+                          <Link
+                            to={`/learn/${course.slug}/${lesson.slug}`}
+                            className="ml-2"
+                          >
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
+                              className="text-xs"
+                              rightIcon={<Play className="w-3 h-3 fill-current" />}
                             >
-                              Learn
+                              Practice
                             </Button>
                           </Link>
                         </div>
@@ -319,4 +473,3 @@ export const CourseOverviewPage: React.FC = () => {
     </div>
   )
 }
-
