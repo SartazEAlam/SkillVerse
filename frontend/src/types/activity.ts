@@ -17,6 +17,7 @@ export type ActivityType =
   | 'scenario'
 
 export type AttemptStatus = 'in_progress' | 'submitted' | 'graded' | 'review_required'
+export type GradingType = 'exact' | 'partial' | 'pattern' | 'manual'
 
 // ── Configuration Models (Learner Facing) ───────────────────────────────────
 

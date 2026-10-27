@@ -7,8 +7,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  BookOpen
+  BookOpen,
+  FolderGit2,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 
 export interface SidebarProps {
   isCollapsed: boolean
@@ -16,6 +18,10 @@ export interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse }) => {
+  const { user } = useAuth()
+  const isCreatorOrAdmin =
+    user?.role?.toLowerCase() === 'creator' || user?.role?.toLowerCase() === 'admin'
+
   const navItems = [
     {
       to: '/',
@@ -35,6 +41,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
       icon: Network,
       badge: 'Interactive'
     },
+    ...(isCreatorOrAdmin
+      ? [
+          {
+            to: '/creator',
+            label: 'Creator Studio',
+            icon: FolderGit2,
+            badge: 'Authoring',
+          },
+        ]
+      : []),
     {
       to: '/profile',
       label: 'Profile & Settings',

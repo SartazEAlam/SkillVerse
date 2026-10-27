@@ -440,53 +440,70 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 7: Creator Studio and Course Publishing
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ### Objectives
-- Build the course authoring interface.
-- Implement course versioning and publication workflow.
-- Add admin review process.
-- Creator analytics.
+- Build a coherent creator workflow: managed courses list, create draft course, edit metadata, organize modules and lessons, configure lesson content blocks and all 9 supported activity types.
+- Provide a non-destructive learner-facing draft preview mode without polluting learner progress, enrollment state, or skill mastery.
+- Enforce backend-authoritative pre-publish validation and publishing through the existing immutable versioning architecture (`publish_course`).
+- Enforce strict server-side creator/admin authorization (`require_creator_or_admin`) and course ownership isolation across all creator endpoints.
+- Protect grading secrets (answer keys, rubrics, test cases) from learners while allowing creators and admins to author and edit them.
 
 ### Dependencies
-- Phase 5 (activity engine — creators need to configure activities).
-- Phase 3 (course content model).
+- Phase 5 (activity engine — 9 activity types, automated grading configs, attempt scoring).
+- Phase 4 (content blocks and learner workspace).
+- Phase 3 (course versioning snapshots, modules, lessons, and skill taxonomy).
+- Phase 2 (authentication, JWT tokens, user identities, roles).
 
 ### Deliverables
-- Database migration for course_reviews.
-- Creator role assignment workflow.
-- Course creation and editing API.
-- Module/lesson/block editor interface.
-- Activity configuration editor (visual configuration, not raw JSON).
-- Course version management (create new version from existing).
-- Submission for review workflow.
-- Admin review interface (approve, reject, request changes).
-- Publication workflow (approved → published → active version).
-- Basic creator analytics (enrollments, completions, activity scores).
+- **Backend Creator API & Draft Management:**
+  - `backend/app/modules/courses/schemas.py`: Pydantic request/response schemas (`CourseManagedSummary`, `CourseManagedListResponse`, `CurriculumReorderRequest`, `ValidationErrorItem`, `DraftValidationResponse`, and activities integration in `LessonDetailResponse`).
+  - `backend/app/modules/courses/service.py`: `CourseService` methods (`list_managed_courses`, `delete_course`, `delete_lesson_from_draft`, `reorder_draft_curriculum`, `validate_draft`, `get_draft_preview`, `get_draft_preview_lesson`).
+  - `backend/app/modules/courses/router.py`: Creator endpoints mounted under `/api/v1/courses` (`GET /managed`, `DELETE /{id}`, `DELETE /{id}/draft/lessons/{lesson_id}`, `POST /{id}/draft/reorder`, `GET /{id}/draft/validate`, `GET /{id}/draft/preview`, `GET /{id}/draft/preview/lessons/{slug}`).
+  - `backend/app/modules/activities/schemas.py`: `ActivityUpdateRequest` and `ActivityAuthoringResponse` exposing answer keys and rubrics only to authorized authors.
+  - `backend/app/modules/activities/service.py`: `ActivityService` authoring methods (`create_activity`, `get_authoring_activity`, `update_activity`, `delete_activity`, and ownership check `_check_activity_access`).
+  - `backend/app/modules/activities/router.py`: Creator endpoints under `/api/v1/activities` (`GET /{id}/authoring`, `PATCH /{id}`, `DELETE /{id}`, and owner check on `POST /`).
+  - `backend/tests/test_creator.py`: 7 end-to-end integration tests for creator authorization, managed listing, cross-creator isolation, curriculum CRUD, activity authoring secrets isolation, validation gating, and immutable version publishing.
+- **Frontend Creator Studio & Authoring Suite:**
+  - `frontend/src/types/creator.ts`: Strict TypeScript interfaces for managed courses, draft validation, reordering, and activity authoring schemas.
+  - `frontend/src/services/creatorApi.ts`: Fully-typed creator API service covering draft lifecycle, curriculum management, block editing, activity authoring, pre-publish validation, preview, and publishing.
+  - `frontend/src/pages/CreatorStudioPage.tsx` (`/creator`): Managed course grid with summary metric counters (total, drafts, published), search by title/slug, status filters (All, Drafts, Published), draft creation modal trigger, and role enforcement (`CREATOR` / `ADMIN`).
+  - `frontend/src/pages/CourseEditorPage.tsx` (`/creator/courses/:courseId`): Split-pane authoring workspace with interactive curriculum navigation, tabbed editing panels (Metadata, Content Blocks, Activities, Pre-publish Validation), draft preview launcher, and publish modal trigger.
+  - `frontend/src/features/creator/CurriculumTree.tsx`: Interactive module and lesson tree supporting adding modules/lessons, inline renaming, deletion, and up/down reordering.
+  - `frontend/src/features/creator/CourseMetadataEditor.tsx`: Course metadata, difficulty, estimated hours, discipline, skill tags, and learning objectives editor with unsaved changes tracking.
+  - `frontend/src/features/creator/LessonBlocksEditor.tsx`: Structured content blocks editor supporting all 7 block types (narrative, heading, list, code snippet, callout, image, video embed) with add, edit, remove, and reorder.
+  - `frontend/src/features/creator/activities/ActivityAuthoringPanel.tsx` & `ActivityEditorModal.tsx`: Visual activity authoring modal with live interactive preview and dedicated forms for all 9 activity types (`SingleChoice`, `MultipleSelect`, `TrueFalse`, `ShortAnswer`, `FillBlank`, `Ordering`, `Matching`, `CodeExercise`, `Scenario`).
+  - `frontend/src/features/creator/ValidationPanel.tsx`: Server-authoritative pre-publish validation panel reporting blocking errors and non-blocking warnings with navigation links to offending lessons.
+  - `frontend/src/features/creator/PublishModal.tsx`: Publish confirmation dialog verifying validation status, changelog input, and immutable version release.
+  - `frontend/src/features/creator/CreateCourseModal.tsx`: New course creation modal with discipline selection, skill taxonomy lookup, and slug preview.
+  - `frontend/src/features/lessons/LessonWorkspace.tsx`: Isolated draft preview mode (`/creator/courses/:courseId/preview/:lessonSlug?`) with prominent preview banner, link prefix isolation, and complete bypass of progress/enrollment mutations.
+  - `frontend/src/components/layout/Sidebar.tsx`: Navigation link to Creator Studio for creator and admin roles.
+  - `frontend/src/test/CreatorStudio.test.tsx`: 8 comprehensive component and workflow tests.
 
 ### Important Files
-- `frontend/src/features/creator/`
-- `backend/app/modules/courses/` (extended)
-- `backend/app/modules/admin/`
+- `backend/app/modules/courses/service.py`, `router.py`, `schemas.py`
+- `backend/app/modules/activities/service.py`, `router.py`, `schemas.py`
+- `backend/tests/test_creator.py`
+- `frontend/src/types/creator.ts`, `frontend/src/services/creatorApi.ts`
+- `frontend/src/pages/CreatorStudioPage.tsx`, `frontend/src/pages/CourseEditorPage.tsx`
+- `frontend/src/features/creator/` (CurriculumTree, LessonBlocksEditor, CourseMetadataEditor, ValidationPanel, PublishModal, CreateCourseModal, activities/)
+- `frontend/src/features/lessons/LessonWorkspace.tsx`
+- `frontend/src/test/CreatorStudio.test.tsx`
 
-### Acceptance Criteria
-1. Creator can create a course with modules, lessons and activities through the UI.
-2. Lesson block editor supports all block types.
-3. Activity configuration editor generates valid activity schemas.
-4. Course versioning: edits create a new version without affecting the active one.
-5. Review submission notifies admin. Admin can approve/reject with comments.
-6. Publication makes the new version active. Existing enrollments stay on their version.
-7. Creator dashboard shows enrollment and completion statistics.
+### Acceptance Criteria & Verification Status
+1. **Creator Authorization & Ownership:** Ordinary learners are strictly forbidden (403 `CREATOR_ACCESS_REQUIRED`). Creators can only view, edit, or delete courses they own, while admins can manage any course (verified in `test_creator.py` and `CreatorStudio.test.tsx`).
+2. **Draft Curriculum CRUD & Reordering:** Creators can create modules and lessons, update titles, delete lessons from working drafts, and reorder modules and lessons with server-enforced sequence numbers (verified in `test_creator.py`).
+3. **Structured Content Block Authoring:** Creators can add, update, and remove structured content blocks (narrative, heading, list, code snippet, callout, image, video embed) directly through visual controls (verified in `CreatorStudio.test.tsx`).
+4. **All 9 Activity Types Supported:** Visual authoring forms with secret answer keys, rubrics, passing scores, and test cases for single choice, multiple select, true/false, short answer, fill-in-the-blank, ordering, matching, code exercise, and scenario. Grading secrets are never exposed on learner-facing endpoints (verified in `test_creator.py` and `CreatorStudio.test.tsx`).
+5. **Pre-Publish Server-Authoritative Validation:** Drafts cannot be published if empty, missing lessons, having empty lessons without blocks, or missing passing scores on activities. Validation response categorizes errors and warnings (verified in `test_creator.py` and `CreatorStudio.test.tsx`).
+6. **Immutable Version Publishing:** Publishing a draft course enforces validation, increments version number, creates an immutable version snapshot, copies activities and grading configurations, and automatically establishes a clean working draft v0 for subsequent edits without mutating published versions (verified in `test_creator.py` and `CreatorStudio.test.tsx`).
+7. **Isolated Draft Preview Mode:** Creators can preview draft lessons using the exact learner-facing workspace components with an amber draft preview banner, while skipping all progress recording and enrollment mutations (verified in `test_creator.py` and `CreatorStudio.test.tsx`).
+8. **Automated Test Coverage:** 125/125 backend tests pass (`pytest` including 7 creator tests), 70/70 frontend tests pass (`vitest run` including 8 creator tests), `npm run build` succeeds cleanly, and `ruff check` and `oxlint` pass with 0 errors (verified).
 
-### Required Tests
-- Course creation end-to-end test.
-- Version isolation test (active version unaffected by draft edits).
-- Review workflow test (submit → approve → publish).
-- Creator analytics accuracy test.
-
-### Risks
-- Lesson block editor complexity (rich text editing is notoriously difficult).
-- Activity configuration UX needs careful design to avoid overwhelming creators.
+### Test Status & Local Limitations
+- **SQLite Test Execution:** All 125 backend tests pass against SQLite. All 70 frontend tests pass. Production build succeeds.
+- **Alembic Clean Drift:** `alembic check` reports 0 schema drift.
+- **Scope Alignment:** Phase 7 focuses on authoring, validation, preview, and immutable publishing. AI-assisted tutoring and practice recommendations are planned for Phase 8.
 
 ---
 

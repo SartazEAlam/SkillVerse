@@ -127,6 +127,47 @@ The Phase 4 lesson workspace decouples content interpretation from rendering, pr
 - **Unknown Block Containment:** Unrecognized block types render a diagnostic warning card rather than throwing an exception or unmounting the tree.
 - **Strict Stale Request Protection:** In-flight network requests are bound to an `AbortController`. When learners quickly navigate between lessons or modules, obsolete network responses are aborted before touching component state.
 
+### Creator Studio & Course Authoring Architecture (Phase 7)
+
+Phase 7 introduces the Creator Studio (`frontend/src/features/creator/` and `pages/CreatorStudioPage.tsx`, `pages/CourseEditorPage.tsx`), providing a unified workspace for course creation, curriculum management, structured content block authoring, visual interactive activity configuration, pre-publish validation, and isolated preview.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    Creator Studio Suite                                 │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│  CreatorStudioPage (/creator)                                                           │
+│  - Metrics overview (Total Courses, Drafts in Progress, Published)                      │
+│  - Real-time search by title/slug, filter by status (All, Drafts, Published)            │
+│  - Draft course initialization modal (discipline & skills taxonomy selector)            │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│  CourseEditorPage (/creator/courses/:courseId)                                          │
+│  ┌──────────────────────────────┬────────────────────────────────────────────────────┐  │
+│  │       CurriculumTree         │                  Authoring Workspace               │  │
+│  │ - Interactive modules tree   │  [Metadata] [Content Blocks] [Activities] [Valid]  │  │
+│  │ - Add/rename/delete module   ├────────────────────────────────────────────────────┤  │
+│  │ - Add/rename/delete lesson   │ CourseMetadataEditor                               │  │
+│  │ - Reorder modules/lessons    │ - Difficulty, duration, tags, objectives           │  │
+│  │ - Active lesson selection    ├────────────────────────────────────────────────────┤  │
+│  │                              │ LessonBlocksEditor                                 │  │
+│  │                              │ - Structured blocks CRUD (heading, text, list,     │  │
+│  │                              │   code, callout, image, video embed)               │  │
+│  │                              ├────────────────────────────────────────────────────┤  │
+│  │                              │ ActivityAuthoringPanel & ActivityEditorModal       │  │
+│  │                              │ - 9 type-aware config forms with secret answer key │  │
+│  │                              │ - Live simulated preview with instant feedback     │  │
+│  │                              ├────────────────────────────────────────────────────┤  │
+│  │                              │ ValidationPanel & PublishModal                     │  │
+│  │                              │ - Server-authoritative blocking error/warning check│  │
+│  │                              │ - Changelog entry & immutable version publication  │  │
+│  └──────────────────────────────┴────────────────────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│  Non-Destructive Learner Preview (/creator/courses/:courseId/preview/:lessonSlug?)      │
+│  - Reuses learner-facing LessonWorkspace, LessonHeader, LessonSidebar, LessonContent     │
+│  - Prominent amber preview banner with "Back to Editor" navigation                      │
+│  - Complete progress & mastery isolation: progress mutations completely bypassed        │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Backend Architecture
@@ -245,6 +286,25 @@ Activities are seamlessly woven into the learning flow through two complementary
 - **Inline Activity Blocks:** Represented by `ActivityBlockData` (`block_type = "activity"`) within `LessonBlock`, allowing creators to place interactive exercises directly between instructional paragraphs.
 - **Lesson Checkpoint Activities:** Standalone activities linked to a lesson via `lesson_id` automatically surfaced in the workspace footer under "Interactive Assessment Checkpoint", prompting learners to demonstrate mastery before proceeding to the next lesson.
 
+### Creator Studio, Draft Lifecycle & Publishing Architecture (Phase 7)
+
+#### 1. Draft Isolation & Branching Model
+SkillVerse strictly enforces immutable course versioning (`ADR-006`).
+- **Initial Creation:** Creates a course aggregate with an initial draft snapshot (`version_number = 0`, `is_active = false`).
+- **Editing Active Courses:** When a creator requests the working draft of a published course (`GET /courses/{id}/draft`), if no working draft exists, the system automatically forks the current published version into a new working draft v0, copying all modules, lessons, content blocks, activities, and grading configurations.
+- **Publication:** When published (`POST /courses/{id}/publish`), the draft is validated, promoted to the next version number (`v1`, `v2`, ...), stamped with `publisher_id`, `published_at`, and `changelog`, set as `is_active = true`, and cloned into a fresh v0 working draft for future revisions. Previous published versions remain intact and unmutated.
+
+#### 2. Server-Authoritative Pre-Publish Validation Engine
+Validation is executed via `CourseService.validate_draft`:
+- **Course Level:** Validates title length, short description, and non-empty `learning_objectives`.
+- **Curriculum Level:** Enforces at least 1 module and at least 1 lesson per module.
+- **Content Level:** Every lesson must contain at least 1 validated content block (`narrative`, `heading`, `list`, `code_snippet`, `callout`, `image`, `video`).
+- **Activity Level:** Interactive activities must have valid passing scores, non-empty answer keys/rubrics, and valid associated skill tags.
+- Any blocking error strictly prevents publishing with `422 Unprocessable Entity` (`PUBLISH_VALIDATION_ERROR`).
+
+#### 3. Secrets Segregation & Authoring API
+- **Learner Protection:** `GET /activities/{id}` and `GET /lessons/{id}/activities` sanitize and strip `answer_key`, `test_cases`, and `rubric` from public and learner responses.
+- **Creator Authoring Access:** `GET /activities/{id}/authoring`, `POST /activities`, `PATCH /activities/{id}`, and `DELETE /activities/{id}` require `require_creator_or_admin` and strictly verify course ownership before exposing or updating grading configurations.
 
 ---
 
@@ -426,4 +486,10 @@ API ← Poll / webhook for result
 **Decision:** Base skill mastery levels (`NOT_STARTED`, `LEARNING`, `PRACTICING`, `PROVISIONAL`, `MASTERED`, `NEEDS_REVIEW`) on authenticated, server-verified attempt evidence requiring a minimum number of distinct completed tasks and threshold average scores, while automating progression cascades (attempt passed → lesson progress updated → course progress calculated and completed) through backend domain events.
 **Rationale:** Simple binary checkmarks or self-reported completions allow learners to bypass rigorous demonstration of learning outcomes. Requiring multiple distinct assessment tasks prevents learners from grinding a single easy question to falsely claim subject mastery. Automating the progression cascade on the backend ensures tamper-proof progression records that are consistent across the learner dashboard, course view, and skill map.
 
+### ADR-011: Server-Authoritative Draft Validation and Non-Destructive Preview Mode
+**Decision:** Require all draft courses to pass backend-authoritative structural and content validation prior to publishing, and support draft inspection through an isolated, non-destructive preview mode that reuses the production learner workspace while strictly preventing learner progression, enrollment creation, or skill mastery mutations.
+**Rationale:** Client-only validation allows malformed courses (e.g. empty lessons, orphaned activities, missing passing scores) to be published, breaking learner experiences. Reusing the production `LessonWorkspace` for draft previews ensures complete visual fidelity (WYSIWYG) between authoring and consumption, while bypassing progress tracking endpoints prevents test runs by creators from polluting analytics or awarding unearned credentials.
 
+### ADR-012: Creator Secrets Segregation and Working Draft Isolation
+**Decision:** Segregate activity authoring contracts from learner-facing contracts by serving complete configurations (including answer keys, hidden test cases, and rubrics) exclusively through dedicated authoring endpoints protected by `require_creator_or_admin` and course ownership checks. Isolate all authoring edits to version 0 drafts until an explicit publish action promotes them to an immutable version.
+**Rationale:** Exposing answer keys on general activity endpoints allows learners to bypass assessments. Conversely, allowing in-place edits to published versions breaks the immutability guarantee for currently enrolled learners. Isolating authoring edits to a clone draft v0 and restricting secrets to verified creators maintains assessment integrity while preserving course version immutability.

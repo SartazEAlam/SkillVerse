@@ -17,14 +17,16 @@ SkillVerse is an immersive learning platform that helps people acquire usable sk
 - **Phase 5 — Interactive Activity and Assessment Engine** (completed)
   Schema-driven assessment engine supporting 9 distinct activity types (`single_choice`, `multiple_select`, `short_answer`, `true_false`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, and `scenario`). Server-authoritative grading with answer key confidentiality (secret keys never exposed to clients), retry enforcement (`max_attempts`), and detailed attempt history with cross-user authorization. Safe execution boundary via `SandboxRunnerInterface` preventing untrusted learner code from running in the main API process. Embedded and checkpoint activity rendering integrated seamlessly into the universal lesson workspace.
 - **Phase 6 — Learner Progression, Enrollments, Skill Mastery & Progress Dashboard** (completed)
-  Full learner progression lifecycle. Authenticated course enrollments bound to immutable course version snapshots (`Enrollment`), with prerequisite DAG validation (`/courses/{slug}/prerequisites`) and duplicate prevention. Durable lesson progress tracking (`LessonProgress`) with server-side gating requiring passed activities. Automated progression cascade (passed assessment attempt triggers lesson start, lesson completion, and overall course completion). Multi-tier, evidence-backed skill mastery system (`SkillMastery`) requiring distinct passed tasks and threshold average scores. Comprehensive learner dashboard (`GET /api/v1/progress/dashboard`) with active enrolled courses, resume learning hero card, skill mastery overview, recent assessment attempts, explainable recommendations, and idempotent achievements (`Achievement`, `UserAchievement`). Dual compatibility across PostgreSQL 16 and SQLite via migration `004_progress_mastery`. Includes 13 automated progression backend tests (106 total) and 3 frontend progress tests (62 total).
+  Full learner progression lifecycle. Authenticated course enrollments bound to immutable course version snapshots (`Enrollment`), with prerequisite DAG validation (`/courses/{slug}/prerequisites`) and duplicate prevention. Durable lesson progress tracking (`LessonProgress`) with server-side gating requiring passed activities. Automated progression cascade (passed assessment attempt triggers lesson start, lesson completion, and overall course completion). Multi-tier, evidence-backed skill mastery system (`SkillMastery`) requiring distinct passed tasks and threshold average scores. Comprehensive learner dashboard (`GET /api/v1/progress/dashboard`) with active enrolled courses, resume learning hero card, skill mastery overview, recent assessment attempts, explainable recommendations, and idempotent achievements (`Achievement`, `UserAchievement`). Dual compatibility across PostgreSQL 16 and SQLite via migration `004_progress_mastery`.
+- **Phase 7 — Creator Studio, Course Authoring & Versioned Publishing** (completed)
+  End-to-end creator workflow. Managed courses dashboard (`/creator`) with metrics, search, and status filters. Split-pane course authoring workspace (`/creator/courses/:courseId`) with interactive curriculum navigation (add, rename, delete, reorder modules and lessons), course metadata editor with unsaved changes tracking, visual structured content blocks editor (all 7 block types: narrative, heading, list, code snippet, callout, image, video embed), and type-aware interactive activity configuration suite covering all 9 supported activity types with confidential answer keys, rubrics, and live simulated preview. Server-authoritative pre-publish validation (`validate_draft`) enforcing structural and assessment standards. Non-destructive learner-facing draft preview (`/creator/courses/:courseId/preview/:lessonSlug?`) with draft banner, bypassing progress and mastery mutations. Immutable course publishing with automatic working draft v0 branching for subsequent revisions. Includes 7 comprehensive backend creator tests (125 total passing) and 8 frontend creator tests (70 total passing across 9 test files).
 
 ## Technology Stack
 
 | Layer | Technology | Status |
 |---|---|---|
-| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1–6) |
-| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2–6) |
+| Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4, Lucide Icons | Implemented (Phases 1–7) |
+| Backend | Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x, Alembic, pwdlib[argon2] | Implemented (Phases 2–7) |
 | Database | PostgreSQL 16 (production/Docker), SQLite (local test harness) | Configured & Migrated (004 head) |
 | Cache / Jobs | Redis 7 (docker-compose ready, worker queue foundation) | Configured |
 | Code Execution | Isolated sandbox (`SandboxRunnerInterface`, safe container worker boundary) | Implemented boundary (Phase 5) |
@@ -112,7 +114,7 @@ python -m alembic check
 # Seed initial cross-disciplinary taxonomy, representative courses, and achievements
 python -m app.seed
 
-# Run all automated tests (executes 106 tests against SQLite test database)
+# Run all automated tests (executes 125 tests against SQLite test database)
 pytest
 
 # Start local development server
@@ -136,7 +138,7 @@ npm run dev
 # Run TypeScript strict type verification
 npm run typecheck
 
-# Run Vitest unit and integration test suite (62 tests across 8 suites)
+# Run Vitest unit and integration test suite (70 tests across 9 suites)
 npm run test
 
 # Run fast linter (oxlint)

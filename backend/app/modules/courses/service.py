@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.modules.activities.models import Activity, GradingConfig
 from app.modules.courses.content_schemas import LessonBlock, LessonContentDocument
 from app.modules.courses.models import (
     Course,
@@ -30,10 +32,17 @@ logger = logging.getLogger(__name__)
 class CourseServiceError(Exception):
     """Domain exception for course catalog, draft editing, and publishing errors."""
 
-    def __init__(self, message: str, code: str = "COURSE_ERROR", status_code: int = 400) -> None:
+    def __init__(
+        self,
+        message: str,
+        code: str = "COURSE_ERROR",
+        status_code: int = 400,
+        details: Any = None,
+    ) -> None:
         self.message = message
         self.code = code
         self.status_code = status_code
+        self.details = details
         super().__init__(message)
 
 
@@ -158,6 +167,11 @@ class CourseService:
                 .selectinload(CourseVersion.modules)
                 .selectinload(Module.lessons)
                 .selectinload(Lesson.blocks),
+                joinedload(Course.current_version)
+                .selectinload(CourseVersion.modules)
+                .selectinload(Module.lessons)
+                .selectinload(Lesson.activities)
+                .joinedload(Activity.grading_config),
                 selectinload(Course.skill_associations).joinedload(CourseSkill.skill),
             )
             .where(
@@ -318,8 +332,16 @@ class CourseService:
         return course
 
     def get_course_by_id(self, course_id: str) -> Course | None:
-        """Get course by UUID."""
-        return self.db.get(Course, course_id)
+        """Get course by UUID with discipline and skill associations eagerly loaded."""
+        stmt = (
+            select(Course)
+            .options(
+                joinedload(Course.discipline),
+                selectinload(Course.skill_associations).joinedload(CourseSkill.skill),
+            )
+            .where(Course.id == course_id)
+        )
+        return self.db.scalars(stmt).first()
 
     # ── Draft Management & Published Immutability ──────────────────────────
 
@@ -335,7 +357,11 @@ class CourseService:
             .options(
                 selectinload(CourseVersion.modules)
                 .selectinload(Module.lessons)
-                .selectinload(Lesson.blocks)
+                .selectinload(Lesson.blocks),
+                selectinload(CourseVersion.modules)
+                .selectinload(Module.lessons)
+                .selectinload(Lesson.activities)
+                .joinedload(Activity.grading_config),
             )
             .where(
                 CourseVersion.course_id == course_id,
@@ -358,7 +384,11 @@ class CourseService:
                 .options(
                     selectinload(CourseVersion.modules)
                     .selectinload(Module.lessons)
-                    .selectinload(Lesson.blocks)
+                    .selectinload(Lesson.blocks),
+                    selectinload(CourseVersion.modules)
+                    .selectinload(Module.lessons)
+                    .selectinload(Lesson.activities)
+                    .joinedload(Activity.grading_config),
                 )
                 .where(CourseVersion.id == course.current_version_id)
             ).first()
@@ -376,7 +406,7 @@ class CourseService:
                 self.db.add(new_draft)
                 self.db.flush()
 
-                # Clone modules, lessons, and blocks
+                # Clone modules, lessons, blocks, and activities
                 for mod in pub_version.modules:
                     new_mod = Module(
                         course_version_id=new_draft.id,
@@ -401,11 +431,56 @@ class CourseService:
                         self.db.add(new_les)
                         self.db.flush()
 
+                        # Clone activities linked to this lesson
+                        activity_id_map: dict[str, str] = {}
+                        for act in getattr(les, "activities", []):
+                            new_act = Activity(
+                                lesson_id=new_les.id,
+                                activity_type=act.activity_type,
+                                title=act.title,
+                                instructions=act.instructions,
+                                configuration=dict(act.configuration)
+                                if isinstance(act.configuration, dict)
+                                else {},
+                                max_attempts=act.max_attempts,
+                                sort_order=act.sort_order,
+                                is_active=act.is_active,
+                            )
+                            self.db.add(new_act)
+                            self.db.flush()
+                            activity_id_map[act.id] = new_act.id
+
+                            if act.grading_config:
+                                new_gc = GradingConfig(
+                                    activity_id=new_act.id,
+                                    grading_type=act.grading_config.grading_type,
+                                    passing_score=act.grading_config.passing_score,
+                                    answer_key=dict(act.grading_config.answer_key)
+                                    if isinstance(act.grading_config.answer_key, dict)
+                                    else {},
+                                    rubric=dict(act.grading_config.rubric)
+                                    if isinstance(act.grading_config.rubric, dict)
+                                    else None,
+                                    test_cases=list(act.grading_config.test_cases)
+                                    if isinstance(act.grading_config.test_cases, list)
+                                    else None,
+                                    feedback_config=dict(act.grading_config.feedback_config)
+                                    if isinstance(act.grading_config.feedback_config, dict)
+                                    else None,
+                                )
+                                self.db.add(new_gc)
+
                         for blk in les.blocks:
+                            content = dict(blk.content) if isinstance(blk.content, dict) else {}
+                            if blk.block_type == "activity" and "activity_id" in content:
+                                old_act_id = content["activity_id"]
+                                if old_act_id in activity_id_map:
+                                    content["activity_id"] = activity_id_map[old_act_id]
+
                             new_blk = LessonBlockModel(
                                 lesson_id=new_les.id,
                                 block_type=blk.block_type,
-                                content=dict(blk.content),
+                                content=content,
                                 sort_order=blk.sort_order,
                             )
                             self.db.add(new_blk)
@@ -712,13 +787,17 @@ class CourseService:
                 status_code=403,
             )
 
-        # Find open draft
+        # Find open draft with modules, lessons, blocks, and activities eagerly loaded
         stmt = (
             select(CourseVersion)
             .options(
                 selectinload(CourseVersion.modules)
                 .selectinload(Module.lessons)
-                .selectinload(Lesson.blocks)
+                .selectinload(Lesson.blocks),
+                selectinload(CourseVersion.modules)
+                .selectinload(Module.lessons)
+                .selectinload(Lesson.activities)
+                .joinedload(Activity.grading_config),
             )
             .where(
                 CourseVersion.course_id == course_id,
@@ -734,37 +813,16 @@ class CourseService:
             )
 
         # ── Validations ──
-        if not draft.modules:
+        # Enforce all mandatory validations reported by draft validation
+        validation = self._validate_course_and_draft(course, draft)
+        if not validation["valid"]:
+            first_error = validation["errors"][0]["message"]
             raise CourseServiceError(
-                "Cannot publish course without any modules.",
+                first_error,
                 code="PUBLISH_VALIDATION_ERROR",
                 status_code=400,
+                details=validation["errors"],
             )
-
-        for mod in draft.modules:
-            if not mod.lessons:
-                raise CourseServiceError(
-                    f"Cannot publish course: module '{mod.title}' has no lessons.",
-                    code="PUBLISH_VALIDATION_ERROR",
-                    status_code=400,
-                )
-            for les in mod.lessons:
-                if not les.blocks:
-                    raise CourseServiceError(
-                        f"Cannot publish course: lesson '{les.title}' in module '{mod.title}' has no content blocks.",
-                        code="PUBLISH_VALIDATION_ERROR",
-                        status_code=400,
-                    )
-                # Validate block schemas
-                for blk in les.blocks:
-                    try:
-                        LessonBlock(id=blk.id, type=blk.block_type, data=blk.content)
-                    except Exception as e:
-                        raise CourseServiceError(
-                            f"Block validation error in lesson '{les.title}': {e}",
-                            code="PUBLISH_VALIDATION_ERROR",
-                            status_code=400,
-                        )
 
         # Compute next version number safely
         max_ver_stmt = select(func.max(CourseVersion.version_number)).where(
@@ -867,6 +925,33 @@ class CourseService:
                     }
                     for blk in sorted(les.blocks, key=lambda b: b.sort_order)
                 ]
+                activities = [
+                    {
+                        "id": act.id,
+                        "lesson_id": act.lesson_id,
+                        "activity_type": act.activity_type,
+                        "title": act.title,
+                        "instructions": act.instructions,
+                        "sort_order": act.sort_order,
+                        "max_attempts": act.max_attempts,
+                        "passing_score": act.grading_config.passing_score
+                        if act.grading_config
+                        else 70.0,
+                        "configuration": act.configuration
+                        if isinstance(act.configuration, dict)
+                        else {},
+                        "skill_id": (act.configuration or {}).get("skill_id")
+                        if isinstance(act.configuration, dict)
+                        else None,
+                        "skill_slug": (act.configuration or {}).get("skill_slug")
+                        if isinstance(act.configuration, dict)
+                        else None,
+                    }
+                    for act in sorted(
+                        getattr(les, "activities", []) or [], key=lambda a: a.sort_order
+                    )
+                    if act.is_active
+                ]
                 lessons.append(
                     {
                         "id": les.id,
@@ -878,6 +963,7 @@ class CourseService:
                         "sort_order": les.sort_order,
                         "content_version": les.content_version,
                         "blocks": blocks,
+                        "activities": activities,
                     }
                 )
             modules.append(
@@ -911,3 +997,394 @@ class CourseService:
             "skills": skills,
             "modules": modules,
         }
+
+    # ── Phase 7: Creator Studio & Course Authoring Operations ──────────────
+
+    def list_managed_courses(
+        self,
+        user_id: str,
+        is_admin: bool = False,
+        status: CourseStatus | None = None,
+    ) -> dict[str, Any]:
+        """List all courses managed by the creator or admin, with rich authoring metadata."""
+        stmt = (
+            select(Course)
+            .options(
+                joinedload(Course.discipline),
+                joinedload(Course.current_version),
+                selectinload(Course.versions),
+            )
+            .order_by(Course.updated_at.desc(), Course.id.desc())
+        )
+        if not is_admin:
+            stmt = stmt.where(Course.creator_id == user_id)
+        if status:
+            stmt = stmt.where(Course.status == status)
+
+        courses = list(self.db.scalars(stmt).all())
+
+        items = []
+        for c in courses:
+            draft_v = next((v for v in c.versions if v.published_at is None), None)
+            pub_v = c.current_version
+
+            target_v = draft_v or pub_v
+            modules_count = 0
+            lessons_count = 0
+            activities_count = 0
+            if target_v:
+                m_ids = self.db.scalars(
+                    select(Module.id).where(Module.course_version_id == target_v.id)
+                ).all()
+                modules_count = len(m_ids)
+                if m_ids:
+                    les_ids = self.db.scalars(
+                        select(Lesson.id).where(Lesson.module_id.in_(m_ids))
+                    ).all()
+                    lessons_count = len(les_ids)
+                    if les_ids:
+                        activities_count = (
+                            self.db.scalar(
+                                select(func.count(Activity.id)).where(
+                                    Activity.lesson_id.in_(les_ids), Activity.is_active.is_(True)
+                                )
+                            )
+                            or 0
+                        )
+
+            items.append(
+                {
+                    "id": c.id,
+                    "slug": c.slug,
+                    "title": c.title,
+                    "short_description": c.short_description,
+                    "discipline_id": c.discipline_id,
+                    "discipline_slug": c.discipline.slug if c.discipline else None,
+                    "discipline_name": c.discipline.name if c.discipline else None,
+                    "difficulty_level": c.difficulty_level,
+                    "estimated_duration_minutes": c.estimated_duration_minutes,
+                    "cover_image_url": c.cover_image_url,
+                    "status": c.status,
+                    "creator_id": c.creator_id,
+                    "published_version_number": pub_v.version_number if pub_v else None,
+                    "has_draft": draft_v is not None,
+                    "draft_version_id": draft_v.id if draft_v else None,
+                    "modules_count": modules_count,
+                    "lessons_count": lessons_count,
+                    "activities_count": activities_count,
+                    "created_at": c.created_at,
+                    "updated_at": c.updated_at,
+                }
+            )
+
+        return {"items": items, "total": len(items)}
+
+    def delete_course(self, course_id: str, user_id: str, is_admin: bool = False) -> bool:
+        """Delete an unpublished draft course (published courses must be archived)."""
+        course = self.get_course_by_id(course_id)
+        if not course:
+            raise CourseServiceError("Course not found.", code="COURSE_NOT_FOUND", status_code=404)
+        if not is_admin and course.creator_id != user_id:
+            raise CourseServiceError("Forbidden.", code="FORBIDDEN", status_code=403)
+
+        has_published = any(v.published_at is not None for v in course.versions)
+        if course.status == CourseStatus.PUBLISHED or has_published:
+            raise CourseServiceError(
+                "Cannot delete a published course. Use archive instead to preserve enrollment and progress records.",
+                code="COURSE_PUBLISHED_CANNOT_DELETE",
+                status_code=400,
+            )
+
+        self.db.delete(course)
+        self.db.commit()
+        return True
+
+    def delete_lesson_from_draft(
+        self, course_id: str, lesson_id: str, user_id: str, is_admin: bool = False
+    ) -> bool:
+        """Delete a lesson and its blocks/activities from the working draft."""
+        lesson = self.db.get(Lesson, lesson_id)
+        if not lesson or lesson.module.course_version.course_id != course_id:
+            raise CourseServiceError("Lesson not found.", code="LESSON_NOT_FOUND", status_code=404)
+
+        course = lesson.module.course_version.course
+        if not is_admin and course.creator_id != user_id:
+            raise CourseServiceError("Forbidden.", code="FORBIDDEN", status_code=403)
+
+        self._assert_version_is_mutable(lesson.module.course_version)
+        self.db.delete(lesson)
+        self.db.commit()
+        return True
+
+    def reorder_draft_curriculum(
+        self,
+        course_id: str,
+        user_id: str,
+        modules_order: list[dict[str, Any]],
+        lessons_order: list[dict[str, Any]],
+        is_admin: bool = False,
+    ) -> bool:
+        """Batch update sort_order for modules and lessons in a draft."""
+        course = self.get_course_by_id(course_id)
+        if not course:
+            raise CourseServiceError("Course not found.", code="COURSE_NOT_FOUND", status_code=404)
+        if not is_admin and course.creator_id != user_id:
+            raise CourseServiceError("Forbidden.", code="FORBIDDEN", status_code=403)
+
+        draft = self.get_or_create_draft(course_id)
+        self._assert_version_is_mutable(draft)
+
+        for m_item in modules_order:
+            mod = self.db.get(Module, m_item["id"])
+            if mod and mod.course_version_id == draft.id:
+                mod.sort_order = m_item["sort_order"]
+
+        for l_item in lessons_order:
+            les = self.db.get(Lesson, l_item["id"])
+            if les and les.module.course_version_id == draft.id:
+                les.sort_order = l_item["sort_order"]
+                if l_item.get("module_id"):
+                    target_mod = self.db.get(Module, l_item["module_id"])
+                    if target_mod and target_mod.course_version_id == draft.id:
+                        les.module_id = target_mod.id
+
+        self.db.commit()
+        return True
+
+    def _validate_course_and_draft(self, course: Course, draft: CourseVersion) -> dict[str, Any]:
+        """Perform comprehensive validation of a course draft prior to publishing.
+
+        Shared by validate_draft() and publish_course() to enforce consistent mandatory rules.
+        """
+        errors: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+
+        # 1. Course metadata
+        if not course.title or len(course.title.strip()) < 3:
+            errors.append(
+                {
+                    "scope": "course",
+                    "id": course.id,
+                    "title": course.title,
+                    "message": "Course title must be at least 3 characters long.",
+                }
+            )
+        if not course.short_description or len(course.short_description.strip()) < 10:
+            errors.append(
+                {
+                    "scope": "course",
+                    "id": course.id,
+                    "title": course.title,
+                    "message": "Course short description must be at least 10 characters long.",
+                }
+            )
+        if not course.discipline or not course.discipline.is_active:
+            errors.append(
+                {
+                    "scope": "course",
+                    "id": course.id,
+                    "title": course.title,
+                    "message": "Course must be assigned to an active discipline.",
+                }
+            )
+        if not course.skill_associations:
+            warnings.append(
+                {
+                    "scope": "course",
+                    "id": course.id,
+                    "title": course.title,
+                    "message": "Course has no associated skills. Learners will not earn skill mastery from this course.",
+                }
+            )
+
+        # 2. Modules
+        if not draft.modules:
+            errors.append(
+                {
+                    "scope": "course",
+                    "id": course.id,
+                    "title": course.title,
+                    "message": "Cannot publish course without any modules.",
+                }
+            )
+
+        course_skill_ids = {cs.skill_id for cs in (course.skill_associations or [])}
+
+        # Reliably load activities for all lessons in this draft
+        lesson_ids = [
+            les.id for mod in (draft.modules or []) for les in (mod.lessons or []) if les.id
+        ]
+        activities_by_lesson: dict[str, list[Activity]] = defaultdict(list)
+        if lesson_ids:
+            acts_stmt = (
+                select(Activity)
+                .options(joinedload(Activity.grading_config))
+                .where(Activity.lesson_id.in_(lesson_ids))
+                .order_by(Activity.sort_order)
+            )
+            for act in self.db.scalars(acts_stmt).unique():
+                if act.lesson_id:
+                    activities_by_lesson[act.lesson_id].append(act)
+
+        for mod in draft.modules or []:
+            if not mod.title or len(mod.title.strip()) < 2:
+                errors.append(
+                    {
+                        "scope": "module",
+                        "id": mod.id,
+                        "title": mod.title,
+                        "message": f"Module '{mod.title}' title must be at least 2 characters long.",
+                    }
+                )
+            if not mod.lessons:
+                errors.append(
+                    {
+                        "scope": "module",
+                        "id": mod.id,
+                        "title": mod.title,
+                        "message": f"Cannot publish course: module '{mod.title}' has no lessons.",
+                    }
+                )
+
+            for les in mod.lessons or []:
+                if not les.title or len(les.title.strip()) < 2:
+                    errors.append(
+                        {
+                            "scope": "lesson",
+                            "id": les.id,
+                            "title": les.title,
+                            "message": f"Lesson '{les.title}' title must be at least 2 characters long.",
+                        }
+                    )
+                if not les.slug or not les.slug.strip():
+                    errors.append(
+                        {
+                            "scope": "lesson",
+                            "id": les.id,
+                            "title": les.title,
+                            "message": f"Lesson '{les.title}' is missing a URL slug.",
+                        }
+                    )
+                if not les.blocks:
+                    errors.append(
+                        {
+                            "scope": "lesson",
+                            "id": les.id,
+                            "title": les.title,
+                            "message": f"Cannot publish course: lesson '{les.title}' in module '{mod.title}' has no content blocks.",
+                        }
+                    )
+                else:
+                    for blk in les.blocks:
+                        try:
+                            LessonBlock(id=blk.id, type=blk.block_type, data=blk.content)
+                        except Exception as e:
+                            errors.append(
+                                {
+                                    "scope": "lesson",
+                                    "id": les.id,
+                                    "title": les.title,
+                                    "message": f"Block validation error in lesson '{les.title}': {e}",
+                                }
+                            )
+
+                lesson_acts = (
+                    activities_by_lesson[les.id]
+                    if les.id in activities_by_lesson
+                    else (getattr(les, "activities", []) or [])
+                )
+
+                for act in lesson_acts:
+                    if not act.is_active:
+                        continue
+                    if not act.title or not act.title.strip():
+                        errors.append(
+                            {
+                                "scope": "activity",
+                                "id": act.id,
+                                "title": act.title,
+                                "message": f"Activity in lesson '{les.title}' is missing a title.",
+                            }
+                        )
+                    if not act.instructions or not act.instructions.strip():
+                        errors.append(
+                            {
+                                "scope": "activity",
+                                "id": act.id,
+                                "title": act.title,
+                                "message": f"Activity '{act.title}' is missing instructions.",
+                            }
+                        )
+                    if not act.grading_config:
+                        errors.append(
+                            {
+                                "scope": "activity",
+                                "id": act.id,
+                                "title": act.title,
+                                "message": f"Activity '{act.title}' is missing grading configuration.",
+                            }
+                        )
+                    else:
+                        if act.grading_config.passing_score is not None and not (
+                            0 <= act.grading_config.passing_score <= 100
+                        ):
+                            errors.append(
+                                {
+                                    "scope": "activity",
+                                    "id": act.id,
+                                    "title": act.title,
+                                    "message": f"Activity '{act.title}' has an invalid passing score (must be between 0 and 100).",
+                                }
+                            )
+                    # Verify skill tag if present
+                    act_cfg = act.configuration if isinstance(act.configuration, dict) else {}
+                    act_skill_id = act_cfg.get("skill_id")
+                    if act_skill_id and act_skill_id not in course_skill_ids:
+                        errors.append(
+                            {
+                                "scope": "activity",
+                                "id": act.id,
+                                "title": act.title,
+                                "message": f"Activity '{act.title}' references skill '{act_skill_id}' which is not associated with this course.",
+                            }
+                        )
+
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+        }
+
+    def validate_draft(
+        self, course_id: str, user_id: str, is_admin: bool = False
+    ) -> dict[str, Any]:
+        """Perform comprehensive validation of a course draft prior to publishing."""
+        course = self.get_course_by_id(course_id)
+        if not course:
+            raise CourseServiceError("Course not found.", code="COURSE_NOT_FOUND", status_code=404)
+        if not is_admin and course.creator_id != user_id:
+            raise CourseServiceError("Forbidden.", code="FORBIDDEN", status_code=403)
+
+        draft = self.get_or_create_draft(course_id)
+        return self._validate_course_and_draft(course, draft)
+
+    def get_draft_preview(
+        self, course_id: str, user_id: str, is_admin: bool = False
+    ) -> dict[str, Any]:
+        """Fetch draft curriculum structured for the learner-facing workspace preview."""
+        return self.get_draft_detail(course_id=course_id, user_id=user_id, is_admin=is_admin)
+
+    def get_draft_preview_lesson(
+        self, course_id: str, lesson_slug: str, user_id: str, is_admin: bool = False
+    ) -> dict[str, Any]:
+        """Fetch draft lesson structured for learner-facing preview."""
+        draft_course = self.get_draft_detail(
+            course_id=course_id, user_id=user_id, is_admin=is_admin
+        )
+        for mod in draft_course["modules"]:
+            for les in mod["lessons"]:
+                if les["slug"] == lesson_slug:
+                    return les
+        raise CourseServiceError(
+            f"Lesson '{lesson_slug}' not found in draft.", code="LESSON_NOT_FOUND", status_code=404
+        )

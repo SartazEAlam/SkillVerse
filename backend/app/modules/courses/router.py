@@ -14,10 +14,13 @@ from app.modules.courses.models import CourseDifficulty
 from app.modules.courses.schemas import (
     CourseCreateRequest,
     CourseDetailResponse,
+    CourseManagedListResponse,
     CoursePaginatedResponse,
     CoursePublishRequest,
     CoursePublishResponse,
     CourseUpdateRequest,
+    CurriculumReorderRequest,
+    DraftValidationResponse,
     LessonContentUpdateRequest,
     LessonCreateRequest,
     LessonDetailResponse,
@@ -32,6 +35,16 @@ router = APIRouter(tags=["Courses & Catalog"])
 
 def _get_course_service(db: Session = Depends(get_db)) -> CourseService:
     return CourseService(db)
+
+
+def _raise_course_http_exception(e: CourseServiceError) -> None:
+    error_payload: dict[str, Any] = {"code": e.code, "message": e.message}
+    if e.details is not None:
+        error_payload["details"] = e.details
+    raise HTTPException(
+        status_code=e.status_code,
+        detail={"error": error_payload},
+    )
 
 
 # ── Public Catalog Endpoints ───────────────────────────────────────────────
@@ -57,6 +70,18 @@ def list_courses(
         search=search,
         page=page,
         limit=limit,
+    )
+
+
+@router.get("/courses/managed", response_model=CourseManagedListResponse)
+def list_managed_courses(
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> dict[str, Any]:
+    """Retrieve all courses managed by the authenticated creator or admin."""
+    return service.list_managed_courses(
+        user_id=current_user.id,
+        is_admin=current_user.role == UserRole.ADMIN,
     )
 
 
@@ -183,6 +208,26 @@ def update_course(
             skill_ids=body.skill_ids,
         )
         return service.get_draft_detail(
+            course_id=course_id,
+            user_id=current_user.id,
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
+    except CourseServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": {"code": e.code, "message": e.message}},
+        )
+
+
+@router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_course(
+    course_id: str,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> None:
+    """Delete an unpublished course (creator or admin privilege required)."""
+    try:
+        service.delete_course(
             course_id=course_id,
             user_id=current_user.id,
             is_admin=current_user.role == UserRole.ADMIN,
@@ -411,6 +456,54 @@ def update_draft_lesson_content(
         )
 
 
+@router.delete(
+    "/courses/{course_id}/draft/lessons/{lesson_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_draft_lesson(
+    course_id: str,
+    lesson_id: str,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> None:
+    """Delete a lesson from the working draft."""
+    try:
+        service.delete_lesson_from_draft(
+            course_id=course_id,
+            lesson_id=lesson_id,
+            user_id=current_user.id,
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
+    except CourseServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": {"code": e.code, "message": e.message}},
+        )
+
+
+@router.post("/courses/{course_id}/draft/reorder")
+def reorder_draft_curriculum(
+    course_id: str,
+    body: CurriculumReorderRequest,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> dict[str, Any]:
+    """Batch update sort order of modules and lessons in the draft."""
+    try:
+        service.reorder_draft_curriculum(
+            course_id=course_id,
+            user_id=current_user.id,
+            modules_order=[m.model_dump() for m in body.modules],
+            lessons_order=[les.model_dump() for les in body.lessons],
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
+        return {"status": "ok"}
+    except CourseServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": {"code": e.code, "message": e.message}},
+        )
+
+
 # ── Publishing & Status Lifecycle Endpoints ────────────────────────────────
 
 
@@ -441,10 +534,7 @@ def publish_course(
             "changelog": version.changelog,
         }
     except CourseServiceError as e:
-        raise HTTPException(
-            status_code=e.status_code,
-            detail={"error": {"code": e.code, "message": e.message}},
-        )
+        _raise_course_http_exception(e)
 
 
 @router.post("/courses/{course_id}/unpublish")
@@ -482,6 +572,71 @@ def archive_course(
             is_admin=current_user.role == UserRole.ADMIN,
         )
         return {"id": course.id, "status": course.status}
+    except CourseServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": {"code": e.code, "message": e.message}},
+        )
+
+
+# ── Draft Preview & Pre-publish Validation Endpoints ───────────────────────
+
+
+@router.get("/courses/{course_id}/draft/validate", response_model=DraftValidationResponse)
+def validate_course_draft(
+    course_id: str,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> dict[str, Any]:
+    """Run comprehensive validation against the draft course structure and activities."""
+    try:
+        return service.validate_draft(
+            course_id=course_id,
+            user_id=current_user.id,
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
+    except CourseServiceError as e:
+        _raise_course_http_exception(e)
+
+
+@router.get("/courses/{course_id}/draft/preview", response_model=CourseDetailResponse)
+def get_draft_preview(
+    course_id: str,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> dict[str, Any]:
+    """Retrieve full curriculum from draft for authorized preview mode."""
+    try:
+        return service.get_draft_preview(
+            course_id=course_id,
+            user_id=current_user.id,
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
+    except CourseServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail={"error": {"code": e.code, "message": e.message}},
+        )
+
+
+@router.get(
+    "/courses/{course_id}/draft/preview/lessons/{lesson_slug}",
+    response_model=LessonDetailResponse,
+)
+def get_draft_preview_lesson(
+    course_id: str,
+    lesson_slug: str,
+    current_user: User = Depends(require_creator_or_admin),
+    service: CourseService = Depends(_get_course_service),
+) -> dict[str, Any]:
+    """Retrieve lesson details and blocks from draft for authorized preview mode."""
+    try:
+        return service.get_draft_preview_lesson(
+            course_id=course_id,
+            lesson_slug=lesson_slug,
+            user_id=current_user.id,
+            is_admin=current_user.role == UserRole.ADMIN,
+        )
     except CourseServiceError as e:
         raise HTTPException(
             status_code=e.status_code,

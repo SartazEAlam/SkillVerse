@@ -9,8 +9,22 @@ import { RegisterPage } from '../pages/RegisterPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { LessonWorkspacePage } from '../pages/LessonWorkspacePage'
+import { CreatorStudioPage } from '../pages/CreatorStudioPage'
+import { CourseEditorPage } from '../pages/CourseEditorPage'
 
 export const router = createBrowserRouter([
+  {
+    path: '/creator/courses/:courseId/preview/:lessonSlug',
+    element: <LessonWorkspacePage />,
+  },
+  {
+    path: '/creator/courses/:courseId/preview',
+    element: <LessonWorkspacePage />,
+  },
+  {
+    path: '/creator/courses/:courseId',
+    element: <CourseEditorPage />,
+  },
   {
     path: '/learn/:courseSlug/:moduleSlug/:lessonSlug',
     element: <LessonWorkspacePage />,
@@ -44,6 +58,10 @@ export const router = createBrowserRouter([
         element: <SkillsPage />,
       },
       {
+        path: 'creator',
+        element: <CreatorStudioPage />,
+      },
+      {
         path: 'courses/:slug',
         element: <CourseOverviewPage />,
       },
@@ -66,4 +84,3 @@ export const router = createBrowserRouter([
     ],
   },
 ])
-

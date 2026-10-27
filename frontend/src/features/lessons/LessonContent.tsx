@@ -29,6 +29,8 @@ interface LessonContentProps {
   nextLesson: FlattenedLesson | null
   enrollmentId?: string
   onProgressUpdated?: (completedSlug?: string) => void
+  linkPrefix?: string
+  isPreview?: boolean
 }
 
 export const LessonContent: React.FC<LessonContentProps> = ({
@@ -39,6 +41,8 @@ export const LessonContent: React.FC<LessonContentProps> = ({
   nextLesson,
   enrollmentId,
   onProgressUpdated,
+  linkPrefix,
+  isPreview = false,
 }) => {
   const [activities, setActivities] = useState<ActivitySummary[]>([])
   const [isCompleting, setIsCompleting] = useState<boolean>(false)
@@ -206,8 +210,12 @@ export const LessonContent: React.FC<LessonContentProps> = ({
         </section>
       )}
 
-      {/* Completion Action Callout for Enrolled Learners */}
-      {enrollmentId && (
+      {/* Completion Action Callout for Enrolled Learners (Disabled in Draft Preview) */}
+      {isPreview ? (
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 font-mono flex items-center justify-between">
+          <span>Draft Preview Mode: Lesson completion and mastery progress tracking are disabled.</span>
+        </div>
+      ) : enrollmentId && (
         <div className="p-5 rounded-xl bg-bg-surface border border-border-medium space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -241,7 +249,7 @@ export const LessonContent: React.FC<LessonContentProps> = ({
           {/* Previous Lesson Link */}
           {prevLesson ? (
             <Link
-              to={`/learn/${courseSlug}/${prevLesson.slug}`}
+              to={`${linkPrefix || `/learn/${courseSlug}`}/${prevLesson.slug}`}
               className="w-full sm:w-auto"
             >
               <Button
@@ -259,14 +267,14 @@ export const LessonContent: React.FC<LessonContentProps> = ({
               </Button>
             </Link>
           ) : (
-            <Link to={`/courses/${courseSlug}`} className="w-full sm:w-auto">
+            <Link to={isPreview ? '/creator' : `/courses/${courseSlug}`} className="w-full sm:w-auto">
               <Button
                 variant="ghost"
                 size="md"
                 leftIcon={<ArrowLeft className="w-4 h-4" />}
                 className="w-full sm:w-auto justify-start text-text-muted hover:text-text-primary"
               >
-                Course Overview
+                {isPreview ? 'Back to Studio' : 'Course Overview'}
               </Button>
             </Link>
           )}
@@ -274,7 +282,7 @@ export const LessonContent: React.FC<LessonContentProps> = ({
           {/* Next Lesson Link */}
           {nextLesson ? (
             <Link
-              to={`/learn/${courseSlug}/${nextLesson.slug}`}
+              to={`${linkPrefix || `/learn/${courseSlug}`}/${nextLesson.slug}`}
               className="w-full sm:w-auto"
             >
               <Button
@@ -292,14 +300,14 @@ export const LessonContent: React.FC<LessonContentProps> = ({
               </Button>
             </Link>
           ) : (
-            <Link to={`/courses/${courseSlug}`} className="w-full sm:w-auto">
+            <Link to={isPreview ? '/creator' : `/courses/${courseSlug}`} className="w-full sm:w-auto">
               <Button
                 variant="primary"
                 size="md"
                 leftIcon={<Compass className="w-4 h-4" />}
                 className="w-full sm:w-auto"
               >
-                Finish Course & Review
+                {isPreview ? 'Back to Creator Studio' : 'Finish Course & Review'}
               </Button>
             </Link>
           )}

@@ -10,6 +10,7 @@ interface LessonSidebarProps {
   completedLessonSlugs?: Set<string>
   isOpen: boolean
   onClose: () => void
+  linkPrefix?: string
 }
 
 export const LessonSidebar: React.FC<LessonSidebarProps> = ({
@@ -19,6 +20,7 @@ export const LessonSidebar: React.FC<LessonSidebarProps> = ({
   completedLessonSlugs,
   isOpen,
   onClose,
+  linkPrefix,
 }) => {
   // Find which module contains the active lesson
   const activeModule = modules.find((m) =>
@@ -149,7 +151,7 @@ export const LessonSidebar: React.FC<LessonSidebarProps> = ({
                       return (
                         <Link
                           key={lesson.id}
-                          to={`/learn/${courseSlug}/${lesson.slug}`}
+                          to={`${linkPrefix || `/learn/${courseSlug}`}/${lesson.slug}`}
                           onClick={onClose}
                           aria-current={isCurrent ? 'page' : undefined}
                           className={`group flex items-start gap-2.5 px-3 py-2 rounded-lg text-xs transition-colors focus-visible:ring-1 focus-visible:ring-accent-violet ${

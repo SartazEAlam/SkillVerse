@@ -87,6 +87,7 @@ export interface ApiLessonDetail {
   sort_order: number
   content_version: number
   blocks: ApiLessonBlock[]
+  activities?: Record<string, unknown>[]
 }
 
 export interface ApiModuleDetail {
@@ -96,6 +97,8 @@ export interface ApiModuleDetail {
   sort_order: number
   lessons: ApiLessonDetail[]
 }
+
+export type ApiModuleOutline = ApiModuleDetail
 
 export interface ApiCourseSummary {
   id: string

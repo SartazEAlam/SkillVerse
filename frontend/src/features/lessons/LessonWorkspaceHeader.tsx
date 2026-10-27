@@ -14,6 +14,8 @@ interface LessonWorkspaceHeaderProps {
   totalLessons: number
   onToggleSidebar: () => void
   isSidebarOpen: boolean
+  isPreview?: boolean
+  courseId?: string
 }
 
 export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
@@ -27,6 +29,8 @@ export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
   totalLessons,
   onToggleSidebar,
   isSidebarOpen,
+  isPreview = false,
+  courseId,
 }) => {
   return (
     <header className="h-16 shrink-0 bg-bg-elevated/90 backdrop-blur-md border-b border-border-medium px-4 sm:px-6 flex items-center justify-between gap-4 z-20">
@@ -42,14 +46,14 @@ export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
           {isSidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
         </button>
 
-        {/* Back Link to Course Overview */}
+        {/* Back Link to Course Overview or Editor */}
         <Link
-          to={`/courses/${courseSlug}`}
-          title="Return to Course Overview"
+          to={isPreview && courseId ? `/creator/courses/${courseId}` : `/courses/${courseSlug}`}
+          title={isPreview ? 'Return to Course Editor' : 'Return to Course Overview'}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-text-primary transition-colors shrink-0 py-1.5 px-2 rounded-md hover:bg-bg-surface focus-visible:ring-1 focus-visible:ring-accent-violet"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Course Overview</span>
+          <span className="hidden sm:inline">{isPreview ? 'Course Editor' : 'Course Overview'}</span>
         </Link>
 
         <span className="text-border-medium hidden sm:inline">•</span>
@@ -73,10 +77,15 @@ export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Version / Demo Status & Lesson Progress */}
+      {/* Right: Version / Demo / Preview Status & Lesson Progress */}
       <div className="flex items-center gap-3 shrink-0">
-        {/* Published Version or Demo Indicator */}
-        {isDemo ? (
+        {/* Published Version, Demo, or Draft Preview Indicator */}
+        {isPreview ? (
+          <Badge variant="amber" size="sm">
+            <Sparkles className="w-3 h-3 mr-1" />
+            Draft Preview Mode
+          </Badge>
+        ) : isDemo ? (
           <Badge variant="amber" size="sm" className="hidden xs:inline-flex">
             <Sparkles className="w-3 h-3 mr-1" />
             Demo Track

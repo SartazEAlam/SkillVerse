@@ -17,15 +17,25 @@ from app.modules.activities.models import (
     Attempt,
     AttemptStatus,
     GradingConfig,
+    GradingType,
 )
 from app.modules.activities.schemas import (
+    ActivityAuthoringResponse,
     ActivityCreate,
     ActivityDetailResponse,
     ActivitySummaryResponse,
+    ActivityUpdateRequest,
     AttemptListResponse,
     AttemptResponse,
 )
-from app.modules.courses.models import Course, CourseSkill, CourseVersion, Lesson, Module
+from app.modules.courses.models import (
+    Course,
+    CourseSkill,
+    CourseVersion,
+    Lesson,
+    LessonBlock,
+    Module,
+)
 from app.modules.skills.models import Skill
 
 logger = logging.getLogger("skillverse.activities")
@@ -150,6 +160,126 @@ class ActivityService:
 
         return results
 
+    def _validate_and_resolve_skill_tag(
+        self,
+        course: Course,
+        raw_skill_id: str | None,
+        raw_skill_slug: str | None,
+    ) -> tuple[str, str]:
+        """Validate that skill tags resolve to an active skill associated with the course."""
+        skill_by_id: Skill | None = None
+        if raw_skill_id is not None:
+            clean_id = str(raw_skill_id).strip()
+            if clean_id:
+                skill_by_id = self.db.scalars(
+                    select(Skill).where(Skill.id == clean_id, Skill.is_active.is_(True))
+                ).first()
+                if not skill_by_id:
+                    inactive = self.db.scalars(select(Skill).where(Skill.id == clean_id)).first()
+                    if inactive and not inactive.is_active:
+                        raise ActivityServiceError(
+                            f"Skill with ID '{clean_id}' is inactive.",
+                            code="INACTIVE_SKILL",
+                            status_code=400,
+                        )
+                    raise ActivityServiceError(
+                        f"Skill with ID '{clean_id}' not found.",
+                        code="SKILL_NOT_FOUND",
+                        status_code=404,
+                    )
+
+        skill_by_slug: Skill | None = None
+        if raw_skill_slug is not None:
+            clean_slug = str(raw_skill_slug).strip().lower()
+            if clean_slug:
+                skill_by_slug = self.db.scalars(
+                    select(Skill).where(Skill.slug == clean_slug, Skill.is_active.is_(True))
+                ).first()
+                if not skill_by_slug:
+                    inactive = self.db.scalars(
+                        select(Skill).where(Skill.slug == clean_slug)
+                    ).first()
+                    if inactive and not inactive.is_active:
+                        raise ActivityServiceError(
+                            f"Skill with slug '{clean_slug}' is inactive.",
+                            code="INACTIVE_SKILL",
+                            status_code=400,
+                        )
+                    raise ActivityServiceError(
+                        f"Skill with slug '{clean_slug}' not found.",
+                        code="SKILL_NOT_FOUND",
+                        status_code=404,
+                    )
+
+        if skill_by_id and skill_by_slug and skill_by_id.id != skill_by_slug.id:
+            raise ActivityServiceError(
+                f"Conflicting skill references: skill_id '{raw_skill_id}' ({skill_by_id.slug}) does not match skill_slug '{raw_skill_slug}'.",
+                code="CONFLICTING_SKILL_TAGS",
+                status_code=400,
+            )
+
+        target_skill = skill_by_id or skill_by_slug
+        if not target_skill:
+            raise ActivityServiceError("No valid skill tag specified.", code="SKILL_NOT_FOUND", status_code=404)
+
+        # Verify target_skill is associated with the course
+        is_course_skill = self.db.scalar(
+            select(func.count(CourseSkill.skill_id)).where(
+                CourseSkill.course_id == course.id,
+                CourseSkill.skill_id == target_skill.id,
+            )
+        )
+        if not is_course_skill or is_course_skill == 0:
+            raise ActivityServiceError(
+                f"Skill '{target_skill.name}' ({target_skill.slug}) is not associated with course '{course.title}'.",
+                code="UNRELATED_SKILL",
+                status_code=400,
+            )
+
+        return target_skill.id, target_skill.slug
+
+    def _check_activity_access(
+        self,
+        activity: Activity,
+        user_id: str,
+        is_admin: bool = False,
+        require_draft: bool = False,
+    ) -> tuple[Course | None, CourseVersion | None]:
+        """Verify creator ownership or admin rights, and optionally enforce draft mutability."""
+        if not activity.lesson_id:
+            return None, None
+
+        stmt = (
+            select(Course, CourseVersion)
+            .join(CourseVersion, Course.id == CourseVersion.course_id)
+            .join(Module, CourseVersion.id == Module.course_version_id)
+            .join(Lesson, Module.id == Lesson.module_id)
+            .where(Lesson.id == activity.lesson_id)
+        )
+        row = self.db.execute(stmt).first()
+        if not row:
+            raise ActivityServiceError(
+                "Course curriculum for this activity could not be found.",
+                code="COURSE_NOT_FOUND",
+                status_code=404,
+            )
+        course, version = row[0], row[1]
+        if course.creator_id != user_id and not is_admin:
+            raise ActivityServiceError(
+                "You are not authorized to view or edit activities in this course.",
+                code="FORBIDDEN",
+                status_code=403,
+            )
+
+        if require_draft and version.published_at is not None:
+            raise ActivityServiceError(
+                "Cannot modify an activity in a published course version. Edit within a working draft instead.",
+                code="CANNOT_MODIFY_PUBLISHED_VERSION",
+                status_code=400,
+            )
+
+        return course, version
+
     # ── Activity Authoring ─────────────────────────────────────────────────
 
     def create_activity(self, data: ActivityCreate) -> Activity:
@@ -201,73 +331,9 @@ class ActivityService:
                     status_code=400,
                 )
 
-            skill_by_id: Skill | None = None
-            if raw_skill_id is not None:
-                skill_by_id = self.db.scalars(
-                    select(Skill).where(Skill.id == str(raw_skill_id), Skill.is_active.is_(True))
-                ).first()
-                if not skill_by_id:
-                    inactive = self.db.scalars(select(Skill).where(Skill.id == str(raw_skill_id))).first()
-                    if inactive and not inactive.is_active:
-                        raise ActivityServiceError(
-                            f"Skill with ID '{raw_skill_id}' is inactive.",
-                            code="INACTIVE_SKILL",
-                            status_code=400,
-                        )
-                    raise ActivityServiceError(
-                        f"Skill with ID '{raw_skill_id}' not found.",
-                        code="SKILL_NOT_FOUND",
-                        status_code=404,
-                    )
-
-            skill_by_slug: Skill | None = None
-            if raw_skill_slug is not None:
-                skill_by_slug = self.db.scalars(
-                    select(Skill).where(Skill.slug == str(raw_skill_slug).strip().lower(), Skill.is_active.is_(True))
-                ).first()
-                if not skill_by_slug:
-                    inactive = self.db.scalars(
-                        select(Skill).where(Skill.slug == str(raw_skill_slug).strip().lower())
-                    ).first()
-                    if inactive and not inactive.is_active:
-                        raise ActivityServiceError(
-                            f"Skill with slug '{raw_skill_slug}' is inactive.",
-                            code="INACTIVE_SKILL",
-                            status_code=400,
-                        )
-                    raise ActivityServiceError(
-                        f"Skill with slug '{raw_skill_slug}' not found.",
-                        code="SKILL_NOT_FOUND",
-                        status_code=404,
-                    )
-
-            if skill_by_id and skill_by_slug and skill_by_id.id != skill_by_slug.id:
-                raise ActivityServiceError(
-                    f"Conflicting skill references: skill_id '{raw_skill_id}' ({skill_by_id.slug}) does not match skill_slug '{raw_skill_slug}'.",
-                    code="CONFLICTING_SKILL_TAGS",
-                    status_code=400,
-                )
-
-            target_skill = skill_by_id or skill_by_slug
-            assert target_skill is not None
-
-            # Verify target_skill is associated with the course
-            is_course_skill = self.db.scalar(
-                select(func.count(CourseSkill.skill_id)).where(
-                    CourseSkill.course_id == course.id,
-                    CourseSkill.skill_id == target_skill.id,
-                )
-            )
-            if not is_course_skill or is_course_skill == 0:
-                raise ActivityServiceError(
-                    f"Skill '{target_skill.name}' ({target_skill.slug}) is not associated with course '{course.title}'.",
-                    code="UNRELATED_SKILL",
-                    status_code=400,
-                )
-
-            # Persist canonical consistent tags in configuration
-            config["skill_id"] = target_skill.id
-            config["skill_slug"] = target_skill.slug
+            s_id, s_slug = self._validate_and_resolve_skill_tag(course, raw_skill_id, raw_skill_slug)
+            config["skill_id"] = s_id
+            config["skill_slug"] = s_slug
 
         activity = Activity(
             lesson_id=data.lesson_id,
@@ -294,6 +360,149 @@ class ActivityService:
         self.db.commit()
         self.db.refresh(activity)
         return activity
+
+    def get_authoring_activity(
+        self, activity_id: str, user_id: str, is_admin: bool = False
+    ) -> ActivityAuthoringResponse:
+        """Fetch full activity definition including answer key for an authorized creator."""
+        activity = self.get_activity_by_id(activity_id)
+        if not activity:
+            raise ActivityServiceError(
+                f"Activity '{activity_id}' not found.",
+                code="ACTIVITY_NOT_FOUND",
+                status_code=404,
+            )
+        self._check_activity_access(activity, user_id, is_admin, require_draft=False)
+
+        cfg = activity.configuration if isinstance(activity.configuration, dict) else {}
+        g_cfg = activity.grading_config
+        return ActivityAuthoringResponse(
+            id=activity.id,
+            lesson_id=activity.lesson_id,
+            activity_type=ActivityType(activity.activity_type),
+            title=activity.title,
+            instructions=activity.instructions,
+            configuration=cfg,
+            skill_id=cfg.get("skill_id"),
+            skill_slug=cfg.get("skill_slug") or cfg.get("skill"),
+            max_attempts=activity.max_attempts,
+            sort_order=activity.sort_order,
+            grading_type=GradingType(g_cfg.grading_type) if g_cfg else GradingType.AUTOMATED,
+            passing_score=g_cfg.passing_score if g_cfg else 70.0,
+            answer_key=g_cfg.answer_key if g_cfg and g_cfg.answer_key else {},
+            rubric=g_cfg.rubric if g_cfg else None,
+            test_cases=g_cfg.test_cases if g_cfg else None,
+            feedback_config=g_cfg.feedback_config if g_cfg else None,
+            created_at=activity.created_at,
+            updated_at=activity.updated_at,
+        )
+
+    def update_activity(
+        self,
+        activity_id: str,
+        data: ActivityUpdateRequest,
+        user_id: str,
+        is_admin: bool = False,
+    ) -> ActivityAuthoringResponse:
+        """Update an activity definition and its grading configuration in a draft."""
+        activity = self.get_activity_by_id(activity_id)
+        if not activity:
+            raise ActivityServiceError(
+                f"Activity '{activity_id}' not found.",
+                code="ACTIVITY_NOT_FOUND",
+                status_code=404,
+            )
+        course, _ = self._check_activity_access(activity, user_id, is_admin, require_draft=True)
+
+        if data.title is not None:
+            activity.title = data.title.strip()
+        if data.instructions is not None:
+            activity.instructions = data.instructions
+        if data.max_attempts is not None:
+            activity.max_attempts = data.max_attempts
+        if data.sort_order is not None:
+            activity.sort_order = data.sort_order
+
+        # Configuration and skill tags
+        config = dict(activity.configuration) if isinstance(activity.configuration, dict) else {}
+        if data.configuration is not None:
+            config = dict(data.configuration)
+
+        raw_skill_id = data.skill_id if data.skill_id is not None else config.get("skill_id")
+        raw_skill_slug = (
+            data.skill_slug
+            if data.skill_slug is not None
+            else (config.get("skill_slug") or config.get("skill"))
+        )
+
+        if course and (raw_skill_id or raw_skill_slug):
+            s_id, s_slug = self._validate_and_resolve_skill_tag(course, raw_skill_id, raw_skill_slug)
+            config["skill_id"] = s_id
+            config["skill_slug"] = s_slug
+        elif data.skill_id == "" or data.skill_slug == "":
+            config.pop("skill_id", None)
+            config.pop("skill_slug", None)
+
+        activity.configuration = config
+
+        # Grading config updates
+        g_cfg = activity.grading_config
+        if not g_cfg:
+            g_cfg = GradingConfig(
+                activity_id=activity.id,
+                grading_type=data.grading_type.value if data.grading_type else GradingType.AUTOMATED.value,
+                passing_score=data.passing_score if data.passing_score is not None else 70.0,
+                answer_key=data.answer_key or {},
+                rubric=data.rubric,
+                test_cases=data.test_cases,
+                feedback_config=data.feedback_config,
+            )
+            self.db.add(g_cfg)
+        else:
+            if data.grading_type is not None:
+                g_cfg.grading_type = data.grading_type.value
+            if data.passing_score is not None:
+                g_cfg.passing_score = data.passing_score
+            if data.answer_key is not None:
+                g_cfg.answer_key = data.answer_key
+            if data.rubric is not None:
+                g_cfg.rubric = data.rubric
+            if data.test_cases is not None:
+                g_cfg.test_cases = data.test_cases
+            if data.feedback_config is not None:
+                g_cfg.feedback_config = data.feedback_config
+
+        self.db.commit()
+        self.db.refresh(activity)
+        return self.get_authoring_activity(activity.id, user_id, is_admin)
+
+    def delete_activity(self, activity_id: str, user_id: str, is_admin: bool = False) -> None:
+        """Delete an activity and its grading configuration from a draft lesson."""
+        activity = self.get_activity_by_id(activity_id)
+        if not activity:
+            raise ActivityServiceError(
+                f"Activity '{activity_id}' not found.",
+                code="ACTIVITY_NOT_FOUND",
+                status_code=404,
+            )
+        self._check_activity_access(activity, user_id, is_admin, require_draft=True)
+
+        # Remove referencing lesson blocks if any
+        if activity.lesson_id:
+            blocks = self.db.scalars(
+                select(LessonBlock).where(
+                    LessonBlock.lesson_id == activity.lesson_id,
+                    LessonBlock.block_type == "activity",
+                )
+            ).all()
+            for blk in blocks:
+                if isinstance(blk.content, dict) and blk.content.get("activity_id") == activity.id:
+                    self.db.delete(blk)
+
+        if activity.grading_config:
+            self.db.delete(activity.grading_config)
+        self.db.delete(activity)
+        self.db.commit()
 
     # ── Submission & Attempt Lifecycle ─────────────────────────────────────
 

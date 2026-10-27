@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { AlertCircle, RefreshCw, Compass, ArrowLeft, BookOpen, Play } from 'lucide-react'
+import { AlertCircle, RefreshCw, Compass, ArrowLeft, Play, Eye } from 'lucide-react'
 import type { ApiCourseDetail, ApiLessonDetail } from '../../types/catalog'
 import type { FlattenedLesson } from '../../types/lesson'
 import type { Enrollment } from '../../types/progress'
 import { courseApi } from '../../services/courseApi'
+import { creatorApi } from '../../services/creatorApi'
 import { progressApi } from '../../services/progressApi'
 import { useAuth } from '../../context/AuthContext'
 import { LessonWorkspaceHeader } from './LessonWorkspaceHeader'
@@ -12,9 +13,19 @@ import { LessonSidebar } from './LessonSidebar'
 import { LessonContent } from './LessonContent'
 import { Button } from '../../components/ui/Button'
 
-export const LessonWorkspace: React.FC = () => {
-  const { courseSlug, lessonSlug } = useParams<{ courseSlug: string; lessonSlug?: string }>()
+interface LessonWorkspaceProps {
+  isPreview?: boolean
+}
+
+export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({ isPreview: isPreviewProp = false }) => {
+  const { courseSlug, lessonSlug, courseId } = useParams<{
+    courseSlug?: string
+    lessonSlug?: string
+    courseId?: string
+  }>()
   const navigate = useNavigate()
+
+  const isPreview = isPreviewProp || Boolean(courseId)
 
   const [course, setCourse] = useState<ApiCourseDetail | null>(null)
   const [currentLesson, setCurrentLesson] = useState<ApiLessonDetail | null>(null)
@@ -23,7 +34,7 @@ export const LessonWorkspace: React.FC = () => {
   const [isDemo, setIsDemo] = useState<boolean>(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false)
 
-  // Phase 6 Progression
+  // Progression state (disabled in preview mode)
   const { user } = useAuth()
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [completedLessonSlugs, setCompletedLessonSlugs] = useState<Set<string>>(new Set())
@@ -64,10 +75,8 @@ export const LessonWorkspace: React.FC = () => {
     return { flattenedLessons: flat, lessonIndexMap: indexMap }
   }, [course])
 
-  // 2. Fetch course details and lesson content
+  // 2. Fetch course details and lesson content (Preview vs Learner)
   const loadData = useCallback(async () => {
-    if (!courseSlug) return
-
     // Cancel in-flight request to prevent race conditions
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -77,6 +86,56 @@ export const LessonWorkspace: React.FC = () => {
 
     setLoading(true)
     setError(null)
+
+    // Draft Preview Mode Handling
+    if (isPreview) {
+      if (!courseId) {
+        setError({ message: 'Missing course ID for preview.' })
+        setLoading(false)
+        return
+      }
+
+      try {
+        const previewCourse = await creatorApi.getDraftPreview(courseId, controller.signal)
+        if (controller.signal.aborted) return
+
+        setCourse(previewCourse)
+        setIsDemo(false)
+
+        let activeLessonSlug = lessonSlug
+        if (!activeLessonSlug) {
+          const firstModule = previewCourse.modules?.[0]
+          const firstLesson = firstModule?.lessons?.[0]
+          if (firstLesson) {
+            navigate(`/creator/courses/${courseId}/preview/${firstLesson.slug}`, { replace: true })
+            return
+          } else {
+            setError({ message: 'This course draft does not contain any lessons yet.' })
+            setLoading(false)
+            return
+          }
+        }
+
+        const previewLesson = await creatorApi.getDraftPreviewLesson(
+          courseId,
+          activeLessonSlug,
+          controller.signal
+        )
+        if (!controller.signal.aborted) {
+          setCurrentLesson(previewLesson)
+          setLoading(false)
+        }
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return
+        const apiErr = err as { message?: string }
+        setError({ message: apiErr.message || 'Failed to load course draft preview.' })
+        setLoading(false)
+      }
+      return
+    }
+
+    // Published / Demo Learner Mode Handling
+    if (!courseSlug) return
 
     try {
       let courseData: ApiCourseDetail | null = null
@@ -202,7 +261,7 @@ export const LessonWorkspace: React.FC = () => {
       setError({ message: e.message || 'An unexpected error occurred while loading the workspace.' })
       setLoading(false)
     }
-  }, [courseSlug, lessonSlug, navigate])
+  }, [courseId, courseSlug, isPreview, lessonSlug, navigate])
 
   useEffect(() => {
     loadData()
@@ -238,6 +297,10 @@ export const LessonWorkspace: React.FC = () => {
     return undefined
   }, [course, currentLesson])
 
+  const linkPrefix = isPreview
+    ? `/creator/courses/${courseId}/preview`
+    : `/learn/${courseSlug}`
+
   // 4. Keyboard Navigation (ArrowLeft: Previous, ArrowRight: Next)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -254,22 +317,24 @@ export const LessonWorkspace: React.FC = () => {
 
       if (e.key === 'ArrowLeft' && prevLesson) {
         e.preventDefault()
-        navigate(`/learn/${courseSlug}/${prevLesson.slug}`)
+        navigate(`${linkPrefix}/${prevLesson.slug}`)
       } else if (e.key === 'ArrowRight' && nextLesson) {
         e.preventDefault()
-        navigate(`/learn/${courseSlug}/${nextLesson.slug}`)
+        navigate(`${linkPrefix}/${nextLesson.slug}`)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [courseSlug, prevLesson, nextLesson, navigate])
+  }, [linkPrefix, nextLesson, prevLesson, navigate])
 
   const currentLessonId = currentLesson?.id
 
-  // 5. Track lesson progress and completion via progression API
+  // 5. Track lesson progress and completion (DISABLED in Preview Mode)
   const refreshProgress = useCallback(
     async (justCompletedSlug?: string) => {
+      if (isPreview) return // Do not track real learner progress in preview mode!
+
       if (justCompletedSlug) {
         setCompletedLessonSlugs((prev) => new Set([...prev, justCompletedSlug]))
       }
@@ -287,12 +352,14 @@ export const LessonWorkspace: React.FC = () => {
         // Progress API unavailable or offline
       }
     },
-    [courseSlug, currentLessonId, user]
+    [courseSlug, currentLessonId, isPreview, user]
   )
 
   useEffect(() => {
-    refreshProgress()
-  }, [refreshProgress])
+    if (!isPreview) {
+      refreshProgress()
+    }
+  }, [isPreview, refreshProgress])
 
   // ── Render States ────────────────────────────────────────────────────────
 
@@ -343,11 +410,11 @@ export const LessonWorkspace: React.FC = () => {
       <div className="min-h-screen bg-bg-base text-text-primary flex flex-col font-sans">
         <header className="h-16 bg-bg-elevated border-b border-border-medium px-6 flex items-center">
           <Link
-            to="/explore"
+            to={isPreview ? '/creator' : '/explore'}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-text-primary"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Course Catalog</span>
+            <span>{isPreview ? 'Creator Studio' : 'Course Catalog'}</span>
           </Link>
         </header>
 
@@ -364,7 +431,15 @@ export const LessonWorkspace: React.FC = () => {
             <p className="text-sm text-text-secondary">{error.message}</p>
 
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-              {error.isNotFound && courseSlug && (
+              {isPreview && courseId && (
+                <Link to={`/creator/courses/${courseId}`}>
+                  <Button variant="primary" size="md" leftIcon={<ArrowLeft className="w-4 h-4" />}>
+                    Back to Course Editor
+                  </Button>
+                </Link>
+              )}
+
+              {!isPreview && error.isNotFound && courseSlug && (
                 <Link to={`/learn/${courseSlug}`}>
                   <Button
                     variant="primary"
@@ -376,28 +451,18 @@ export const LessonWorkspace: React.FC = () => {
                 </Link>
               )}
 
-              {!error.isNotFound && (
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={loadData}
-                  leftIcon={<RefreshCw className="w-4 h-4" />}
-                >
-                  Retry Request
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="md"
+                onClick={loadData}
+                leftIcon={<RefreshCw className="w-4 h-4" />}
+              >
+                Retry Request
+              </Button>
 
-              {courseSlug && (
-                <Link to={`/courses/${courseSlug}`}>
-                  <Button variant="outline" size="md" leftIcon={<BookOpen className="w-4 h-4" />}>
-                    Course Syllabus
-                  </Button>
-                </Link>
-              )}
-
-              <Link to="/explore">
+              <Link to={isPreview ? '/creator' : '/explore'}>
                 <Button variant="ghost" size="md" leftIcon={<Compass className="w-4 h-4" />}>
-                  Catalog
+                  {isPreview ? 'Studio' : 'Catalog'}
                 </Button>
               </Link>
             </div>
@@ -414,6 +479,39 @@ export const LessonWorkspace: React.FC = () => {
   // Loaded Workspace
   return (
     <div className="min-h-screen bg-bg-base text-text-primary flex flex-col font-sans selection:bg-accent-violet/30 selection:text-text-primary">
+      {/* Draft Preview Banner */}
+      {isPreview && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs text-amber-400 z-30">
+          <div className="flex items-center gap-2">
+            <Eye className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Draft Preview Mode:</strong> You are previewing unpublished draft content.
+              Activity submissions and progress tracking are simulated and do NOT affect your learner profile, enrollments, or skill mastery.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-4">
+            {courseId && (
+              <Link to={`/creator/courses/${courseId}`}>
+                <button
+                  type="button"
+                  className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-[11px] transition-colors cursor-pointer"
+                >
+                  Back to Editor
+                </button>
+              </Link>
+            )}
+            <Link to="/creator">
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded bg-bg-surface hover:bg-bg-elevated text-text-muted hover:text-text-primary text-[11px] transition-colors cursor-pointer"
+              >
+                Exit Preview
+              </button>
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Workspace Header */}
       <LessonWorkspaceHeader
         courseTitle={course.title}
@@ -426,9 +524,11 @@ export const LessonWorkspace: React.FC = () => {
         totalLessons={flattenedLessons.length}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        isPreview={isPreview}
+        courseId={courseId}
       />
 
-      {/* Main Workspace Workspace Body: Sidebar + Scrollable Content */}
+      {/* Main Workspace Body: Sidebar + Scrollable Content */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Collapsible / Responsive Module & Lesson Sidebar */}
         <LessonSidebar
@@ -438,6 +538,7 @@ export const LessonWorkspace: React.FC = () => {
           completedLessonSlugs={completedLessonSlugs}
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
+          linkPrefix={isPreview ? `/creator/courses/${courseId}/preview` : undefined}
         />
 
         {/* Scrollable Lesson Reading Content */}
@@ -455,6 +556,8 @@ export const LessonWorkspace: React.FC = () => {
             nextLesson={nextLesson}
             enrollmentId={enrollment?.id}
             onProgressUpdated={refreshProgress}
+            linkPrefix={isPreview ? `/creator/courses/${courseId}/preview` : undefined}
+            isPreview={isPreview}
           />
         </main>
       </div>

@@ -65,6 +65,7 @@ class LessonDetailResponse(BaseModel):
     sort_order: int
     content_version: int = 1
     blocks: list[LessonBlockResponse] = []
+    activities: list[dict[str, Any]] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -196,3 +197,79 @@ class CoursePublishResponse(BaseModel):
     published_at: datetime
     publisher_id: str
     changelog: str | None = None
+
+
+# ── Creator Studio & Managed Courses Schemas ────────────────────────────────
+
+
+class CourseManagedSummary(BaseModel):
+    """Rich course summary for Creator Studio dashboard."""
+
+    id: str
+    slug: str
+    title: str
+    short_description: str
+    discipline_id: str
+    discipline_slug: str | None = None
+    discipline_name: str | None = None
+    difficulty_level: CourseDifficulty
+    estimated_duration_minutes: int | None = None
+    cover_image_url: str | None = None
+    status: CourseStatus
+    creator_id: str
+    published_version_number: int | None = None
+    has_draft: bool = False
+    draft_version_id: str | None = None
+    modules_count: int = 0
+    lessons_count: int = 0
+    activities_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CourseManagedListResponse(BaseModel):
+    """Response containing list of courses managed by creator."""
+
+    items: list[CourseManagedSummary]
+    total: int
+
+
+class ModuleOrderItem(BaseModel):
+    """Module reordering payload item."""
+
+    id: str
+    sort_order: int = Field(ge=0)
+
+
+class LessonOrderItem(BaseModel):
+    """Lesson reordering payload item."""
+
+    id: str
+    module_id: str | None = None
+    sort_order: int = Field(ge=0)
+
+
+class CurriculumReorderRequest(BaseModel):
+    """Payload to batch reorder modules and lessons within a draft."""
+
+    modules: list[ModuleOrderItem] = Field(default_factory=list)
+    lessons: list[LessonOrderItem] = Field(default_factory=list)
+
+
+class ValidationErrorItem(BaseModel):
+    """Actionable validation issue detail."""
+
+    scope: str = Field(description="Scope of issue: 'course', 'module', 'lesson', 'activity', or 'skill'")
+    id: str | None = Field(default=None, description="Identifier of the affected entity")
+    title: str | None = Field(default=None, description="Title or name of the affected entity")
+    message: str = Field(description="Actionable explanation of the validation failure")
+
+
+class DraftValidationResponse(BaseModel):
+    """Comprehensive validation outcome for a draft course prior to publishing."""
+
+    valid: bool
+    errors: list[ValidationErrorItem] = Field(default_factory=list)
+    warnings: list[ValidationErrorItem] = Field(default_factory=list)

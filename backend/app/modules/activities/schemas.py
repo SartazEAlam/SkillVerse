@@ -154,3 +154,47 @@ class AttemptListResponse(BaseModel):
     max_attempts: int | None
     can_retry: bool
     attempts: list[AttemptResponse]
+
+
+# ── Creator / Authoring Activity Schemas ────────────────────────────────────
+
+
+class ActivityUpdateRequest(BaseModel):
+    """Payload to update an activity configuration and its grading criteria."""
+
+    title: str | None = Field(None, min_length=1, max_length=300)
+    instructions: str | None = Field(None, min_length=1)
+    configuration: dict[str, Any] | None = None
+    skill_id: str | None = None
+    skill_slug: str | None = None
+    max_attempts: int | None = Field(None, ge=1)
+    sort_order: int | None = Field(None, ge=0)
+    grading_type: GradingType | None = None
+    passing_score: float | None = Field(None, ge=0.0, le=100.0)
+    answer_key: dict[str, Any] | None = None
+    rubric: dict[str, Any] | None = None
+    test_cases: list[dict[str, Any]] | None = None
+    feedback_config: dict[str, Any] | None = None
+
+
+class ActivityAuthoringResponse(BaseModel):
+    """Full activity definition for authorized creators, including confidential answer keys."""
+
+    id: str
+    lesson_id: str | None
+    activity_type: ActivityType
+    title: str
+    instructions: str
+    configuration: dict[str, Any]
+    skill_id: str | None = None
+    skill_slug: str | None = None
+    max_attempts: int | None = None
+    sort_order: int
+    grading_type: GradingType = GradingType.AUTOMATED
+    passing_score: float = 70.0
+    answer_key: dict[str, Any] = Field(default_factory=dict)
+    rubric: dict[str, Any] | None = None
+    test_cases: list[dict[str, Any]] | None = None
+    feedback_config: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime

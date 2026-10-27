@@ -538,7 +538,42 @@ Retrieve individual lesson details and structured content blocks from the active
 
 ---
 
-## Course Authoring & Version Publishing (Phase 3 Implemented)
+## Course Authoring, Drafts & Publishing (Creator Studio — Phase 7 Implemented)
+
+### `GET /api/v1/courses/managed` 🔓🛡️
+List courses managed by the authenticated creator or admin.
+- Ordinary learners receive `403 Forbidden` (`CREATOR_ACCESS_REQUIRED`).
+- Creators only see courses where they are the creator (`course.creator_id == user.id`).
+- Admins see all courses on the platform.
+- Returns comprehensive metrics including latest version number, total modules, total lessons, and enrolled learners count.
+```json
+// Response 200 OK
+{
+  "items": [
+    {
+      "id": "uuid",
+      "slug": "quantum-mechanics-101",
+      "title": "Quantum Mechanics 101",
+      "short_description": "Foundational quantum computing and physics.",
+      "discipline_id": "uuid",
+      "discipline_slug": "physics",
+      "discipline_name": "Physics",
+      "difficulty_level": "INTERMEDIATE",
+      "estimated_duration_minutes": 240,
+      "cover_image_url": null,
+      "status": "DRAFT",
+      "latest_version_number": 0,
+      "published_version_number": null,
+      "total_modules": 2,
+      "total_lessons": 4,
+      "enrolled_count": 0,
+      "created_at": "2026-10-27T10:00:00Z",
+      "updated_at": "2026-10-27T10:00:00Z"
+    }
+  ],
+  "total": 1
+}
+```
 
 ### `POST /api/v1/courses` 🔓🛡️
 Create a new course aggregate and its initial working draft (version 0). Creator or admin privilege required.
@@ -558,10 +593,16 @@ Create a new course aggregate and its initial working draft (version 0). Creator
 ```
 
 ### `GET /api/v1/courses/{course_id}/draft` 🔓🛡️
-Retrieve the current working draft. If the course is published and has no open draft, this clones the published snapshot into a new working draft. Only the owner or admin can view drafts.
+Retrieve the current working draft. If the course is published and has no open draft, this clones the published snapshot into a new working draft v0. Only the owner or admin can view drafts.
 
 ### `PATCH /api/v1/courses/{course_id}` 🔓🛡️
-Update course aggregate metadata and draft objectives.
+Update course aggregate metadata, skills tags, and draft learning objectives. Only owner or admin.
+
+### `DELETE /api/v1/courses/{course_id}` 🔓🛡️
+Delete a draft course entirely, or soft-delete a published course.
+- If the course has never been published (`status == 'DRAFT'`), deletes draft modules, lessons, activities, and the course record completely.
+- If the course is published, sets `status = ARCHIVED`.
+- Only course owner or admin can delete. Returns 204 No Content.
 
 ### `POST /api/v1/courses/{course_id}/draft/modules` 🔓🛡️
 Add a module to the working draft.
@@ -574,7 +615,7 @@ Add a module to the working draft.
 Update draft module metadata.
 
 ### `DELETE /api/v1/courses/{course_id}/draft/modules/{module_id}` 🔓🛡️
-Delete a module and its lessons from the working draft.
+Delete a module and its lessons and activities from the working draft.
 
 ### `POST /api/v1/courses/{course_id}/draft/modules/{module_id}/lessons` 🔓🛡️
 Add a lesson unit to a draft module.
@@ -586,9 +627,12 @@ Add a lesson unit to a draft module.
 ### `PATCH /api/v1/courses/{course_id}/draft/lessons/{lesson_id}` 🔓🛡️
 Update lesson outline metadata.
 
+### `DELETE /api/v1/courses/{course_id}/draft/lessons/{lesson_id}` 🔓🛡️
+Delete a single lesson and its associated activities and content from the working draft. Only owner or admin. Returns 204 No Content.
+
 ### `PUT /api/v1/courses/{course_id}/draft/lessons/{lesson_id}/content` 🔓🛡️
 Atomically replace content blocks for a draft lesson with a validated `LessonContentDocument`.
-- Validates block schemas, rich-text tags, and media host allowlists.
+- Validates block schemas, rich-text tags, and media host allowlists. Supports narrative text, headings, lists, code snippets, callouts, images, and video embeds.
 ```json
 // Request
 {
@@ -604,11 +648,72 @@ Atomically replace content blocks for a draft lesson with a validated `LessonCon
 }
 ```
 
+### `POST /api/v1/courses/{course_id}/draft/reorder` 🔓🛡️
+Atomically reorder modules and lessons within the draft curriculum.
+```json
+// Request
+{
+  "modules_order": [
+    { "id": "uuid-mod-1", "sort_order": 1 },
+    { "id": "uuid-mod-2", "sort_order": 2 }
+  ],
+  "lessons_order": [
+    { "id": "uuid-les-1", "sort_order": 1, "module_id": "uuid-mod-1" },
+    { "id": "uuid-les-2", "sort_order": 2, "module_id": "uuid-mod-1" }
+  ]
+}
+// Response 200 OK
+{ "message": "Curriculum reordered successfully." }
+```
+
+### `GET /api/v1/courses/{course_id}/draft/validate` 🔓🛡️
+Perform comprehensive backend-authoritative pre-publish validation on the draft course.
+- Validates:
+  - Course metadata, title, short description, and learning objectives.
+  - At least 1 module and 1 lesson.
+  - Every lesson has at least 1 content block.
+  - Every activity has a valid passing score, answer key, and associated skill.
+- Returns actionable error and warning items with entity links (`entity_type`, `id`, `title`, `message`).
+```json
+// Response 200 OK
+{
+  "valid": false,
+  "errors": [
+    {
+      "entity_type": "lesson",
+      "id": "uuid-les-1",
+      "title": "Introduction to Qubits",
+      "message": "Lesson has no content blocks. Add at least one content block."
+    }
+  ],
+  "warnings": [
+    {
+      "entity_type": "lesson",
+      "id": "uuid-les-2",
+      "title": "Quantum Gates",
+      "message": "Lesson has no interactive assessment activities configured."
+    }
+  ]
+}
+```
+
+### `GET /api/v1/courses/{course_id}/draft/preview` 🔓🛡️
+Fetch the entire working draft course structured for learner-facing renderer preview.
+- Includes modules, lessons, content blocks, and stripped activity summaries.
+- Owner or admin authorization required.
+
+### `GET /api/v1/courses/{course_id}/draft/preview/lessons/{lesson_slug}` 🔓🛡️
+Fetch a specific draft lesson structured for learner-facing preview.
+- Returns lesson content blocks, metadata, and activities.
+- Allows previewing draft changes before publishing without affecting learner progress or mastery.
+
 ### `POST /api/v1/courses/{course_id}/publish` 🔓🛡️
 Atomically snapshot and publish the working draft into an immutable published version.
-- Enforces validations: at least 1 module, every module has at least 1 lesson, every lesson has at least 1 validated content block, non-empty learning objectives.
+- Enforces backend validation: rejects publish with `422 Unprocessable Entity` (`PUBLISH_VALIDATION_ERROR`) if any validation errors exist.
 - Allocates next version number transactionally (v1, v2, ...).
 - Stamps `published_at`, `publisher_id`, `changelog`.
+- Copies all activities and grading configs into the newly published version.
+- Automatically establishes a clean working draft v0 for subsequent edits without mutating published versions.
 - Sets `is_active = true` and updates `course.current_version_id`.
 - Deactivates previous versions while preserving their historical snapshots intact.
 ```json
@@ -619,7 +724,7 @@ Atomically snapshot and publish the working draft into an immutable published ve
   "course_id": "uuid",
   "version_id": "uuid",
   "version_number": 1,
-  "published_at": "2026-10-21T18:00:00Z",
+  "published_at": "2026-10-27T12:00:00Z",
   "publisher_id": "uuid",
   "changelog": "Initial course release v1.0"
 }
@@ -808,6 +913,47 @@ Retrieve details of a specific attempt.
 ### `POST /api/v1/activities` 🔓🛡️ (creator/admin)
 Author a new interactive activity along with its confidential grading configuration.
 - **Answer Key Protection:** The `answer_key` is persisted securely to `grading_configs` and omitted from the returned `ActivityDetailResponse`.
+- **Course Ownership Verification:** Verifies that the authenticated creator owns the course draft containing the target lesson (or is an admin).
+- Supports all 9 activity types (`single_choice`, `multiple_select`, `true_false`, `short_answer`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario`).
+
+### `GET /api/v1/activities/{activity_id}/authoring` 🔓🛡️ (creator/admin)
+Retrieve the complete activity authoring definition, including confidential `answer_key`, `rubric`, `test_cases`, and `feedback_config`.
+- **Authorization Invariant:** Strict role check (`require_creator_or_admin`) and course ownership check. Ordinary learners receive `403 Forbidden` (`CREATOR_ACCESS_REQUIRED`), preventing exposure of grading secrets.
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "lesson_id": "uuid",
+  "activity_type": "single_choice",
+  "title": "Quantum Spin Landmark",
+  "instructions": "Select the correct spin state...",
+  "configuration": {
+    "options": [
+      { "id": "spin-up", "text": "|↑⟩ Spin Up" },
+      { "id": "spin-down", "text": "|↓⟩ Spin Down" }
+    ]
+  },
+  "skill_id": "uuid",
+  "skill_slug": "quantum-superposition",
+  "max_attempts": 3,
+  "sort_order": 1,
+  "grading_type": "automated",
+  "passing_score": 80.0,
+  "answer_key": { "correct_option_id": "spin-up" },
+  "rubric": null,
+  "test_cases": null,
+  "feedback_config": null,
+  "created_at": "2026-10-27T10:00:00Z",
+  "updated_at": "2026-10-27T10:00:00Z"
+}
+```
+
+### `PATCH /api/v1/activities/{activity_id}` 🔓🛡️ (creator/admin)
+Update activity definition, configuration, passing score, max attempts, associated skill, or confidential grading secrets (`answer_key`, `rubric`, `test_cases`, `feedback_config`).
+- Validates course ownership and ensures updates preserve schema validity.
+
+### `DELETE /api/v1/activities/{activity_id}` 🔓🛡️ (creator/admin)
+Delete an activity from a draft lesson. Also cleans up its associated grading configuration and learner attempts. Only course owner or admin can delete. Returns 204 No Content.
 
 ---
 
@@ -1079,29 +1225,23 @@ View a public portfolio.
 
 ## Course Creation & Publication (Creator Role)
 
-### `POST /api/v1/creator/courses` 🔓🛡️ (creator)
-Create a new course draft.
+*Note: Canonical Phase 7 creator endpoints are integrated under `/api/v1/courses` and `/api/v1/activities` (see [Course Authoring, Drafts & Publishing (Creator Studio — Phase 7 Implemented)](#course-authoring-drafts--publishing-creator-studio--phase-7-implemented)).*
 
-### `GET /api/v1/creator/courses` 🔓🛡️ (creator)
-List courses owned by the authenticated creator.
-
-### `PUT /api/v1/creator/courses/{course_id}/versions/{version_id}/modules` 🔓🛡️ (creator)
-Update module structure for a draft version.
-
-### `PUT /api/v1/creator/courses/{course_id}/versions/{version_id}/modules/{module_id}/lessons/{lesson_id}` 🔓🛡️ (creator)
-Update lesson content and blocks.
-
-### `POST /api/v1/creator/courses/{course_id}/versions/{version_id}/submit-for-review` 🔓🛡️ (creator)
-Submit a course version for review.
-
-### `POST /api/v1/admin/reviews/{review_id}/decide` 🔓🛡️ (admin)
-Approve or reject a course version.
-```json
-{ "decision": "approved", "comments": "Looks great, minor suggestion on module 3." }
-```
-
-### `POST /api/v1/creator/courses/{course_id}/versions/{version_id}/publish` 🔓🛡️ (creator)
-Publish an approved course version (makes it the active version).
+Key endpoints:
+- `GET /api/v1/courses/managed` 🔓🛡️: List courses managed by creator/admin
+- `POST /api/v1/courses` 🔓🛡️: Create new draft course
+- `GET /api/v1/courses/{id}/draft` 🔓🛡️: Fetch working draft
+- `PATCH /api/v1/courses/{id}` 🔓🛡️: Update course metadata & skills
+- `DELETE /api/v1/courses/{id}` 🔓🛡️: Delete draft / archive course
+- `POST /api/v1/courses/{id}/draft/reorder` 🔓🛡️: Reorder curriculum modules & lessons
+- `PUT /api/v1/courses/{id}/draft/lessons/{lesson_id}/content` 🔓🛡️: Save structured content blocks
+- `GET /api/v1/activities/{id}/authoring` 🔓🛡️: Inspect activity config and secrets
+- `POST /api/v1/activities` 🔓🛡️: Create activity & grading config
+- `PATCH /api/v1/activities/{id}` 🔓🛡️: Update activity & grading secrets
+- `DELETE /api/v1/activities/{id}` 🔓🛡️: Remove activity
+- `GET /api/v1/courses/{id}/draft/validate` 🔓🛡️: Server pre-publish validation
+- `GET /api/v1/courses/{id}/draft/preview` 🔓🛡️: Learner-facing draft preview
+- `POST /api/v1/courses/{id}/publish` 🔓🛡️: Validate & publish immutable version
 
 ---
 
