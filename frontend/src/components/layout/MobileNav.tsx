@@ -6,8 +6,10 @@ import {
   Network,
   X,
   Sparkles,
-  BookOpen
+  BookOpen,
+  FolderGit2,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import { IconButton } from '../ui/IconButton'
 
 export interface MobileNavProps {
@@ -16,6 +18,10 @@ export interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
+  const { user } = useAuth()
+  const isCreatorOrAdmin =
+    user?.role?.toLowerCase() === 'creator' || user?.role?.toLowerCase() === 'admin'
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -38,7 +44,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/explore', label: 'Explore Courses', icon: Compass },
     { to: '/skills', label: 'Skill Map', icon: Network },
-    { to: '/profile', label: 'Profile & Settings', icon: BookOpen }
+    ...(isCreatorOrAdmin
+      ? [{ to: '/creator', label: 'Creator Studio', icon: FolderGit2 }]
+      : []),
+    { to: '/profile', label: 'Profile & Settings', icon: BookOpen },
   ]
 
   return (

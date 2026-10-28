@@ -6,6 +6,7 @@ import { DashboardPage } from '../pages/DashboardPage'
 import { ExplorePage } from '../pages/ExplorePage'
 import { SkillsPage } from '../pages/SkillsPage'
 import { CourseOverviewPage } from '../pages/CourseOverviewPage'
+import { CreatorStudioPage } from '../pages/CreatorStudioPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 
 describe('Application Routing & Navigation', () => {
@@ -17,6 +18,7 @@ describe('Application Routing & Navigation', () => {
             <Route index element={<DashboardPage />} />
             <Route path="explore" element={<ExplorePage />} />
             <Route path="skills" element={<SkillsPage />} />
+            <Route path="creator" element={<CreatorStudioPage />} />
             <Route path="courses/:slug" element={<CourseOverviewPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
@@ -62,5 +64,12 @@ describe('Application Routing & Navigation', () => {
     renderWithRoute('/some/random/route')
     expect(screen.getByText(/error 404/i)).toBeInTheDocument()
     expect(screen.getAllByText(/page not found/i).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders Creator Studio breadcrumb and title at /creator', () => {
+    renderWithRoute('/creator')
+    expect(screen.getByText(/Authoring \//i)).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { level: 1, name: /Creator Studio/i }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText(/404 \//i)).not.toBeInTheDocument()
   })
 })

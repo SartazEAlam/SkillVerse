@@ -22,6 +22,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     if (location.pathname === '/login') return { title: 'Sign In', crumb: 'Auth' }
     if (location.pathname === '/register') return { title: 'Create Account', crumb: 'Auth' }
     if (location.pathname.startsWith('/courses/')) return { title: 'Course Overview', crumb: 'Course' }
+    if (location.pathname === '/creator' || location.pathname.startsWith('/creator/')) {
+      return { title: 'Creator Studio', crumb: 'Authoring' }
+    }
     return { title: 'Page Not Found', crumb: '404' }
   }
 
