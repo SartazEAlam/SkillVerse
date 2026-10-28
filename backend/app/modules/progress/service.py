@@ -903,11 +903,14 @@ class ProgressionService:
                 RecommendationItem(
                     id="rec-resume-lesson",
                     action_type="continue_course",
+                    type="continue_course",
                     title=f"Continue: {resume.lesson_title}",
                     description=f"Pick up where you left off in {resume.course_title}.",
                     reason="Active course in progress.",
                     link=f"/learn/{resume.course_slug}/{resume.lesson_slug}",
                     badge="In Progress",
+                    course_slug=resume.course_slug,
+                    lesson_slug=resume.lesson_slug,
                 )
             )
 
@@ -930,11 +933,14 @@ class ProgressionService:
                         RecommendationItem(
                             id=f"rec-retry-{recent_fail.activity.id}",
                             action_type="take_assessment",
+                            type="take_assessment",
                             title=f"Retry Assessment: {recent_fail.activity.title}",
                             description="Review key concepts and achieve a passing score to solidify understanding.",
                             reason="Unpassed assessment needs review.",
                             link=f"/learn/{course.slug}/{lesson.slug}",
                             badge="Needs Review",
+                            course_slug=course.slug,
+                            lesson_slug=lesson.slug,
                         )
                     )
 
@@ -961,11 +967,13 @@ class ProgressionService:
                 RecommendationItem(
                     id=f"rec-explore-{recommended_course.slug}",
                     action_type="explore_next",
+                    type="explore_next",
                     title=f"Start Course: {recommended_course.title}",
                     description=recommended_course.short_description,
                     reason="Recommended based on cross-disciplinary curriculum tracks with satisfied prerequisites.",
                     link=f"/courses/{recommended_course.slug}",
                     badge="Suggested Track",
+                    course_slug=recommended_course.slug,
                 )
             )
 
@@ -1162,6 +1170,7 @@ class ProgressionService:
             skills_learning_count=learning_cnt,
             skills_mastered_count=mastered_cnt,
             skills=skills_mastery,
+            skills_summary=skills_mastery,
             recent_attempts=recent_attempts,
             achievements=achievements,
             achievements_earned_count=earned_cnt,

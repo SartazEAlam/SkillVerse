@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.progress.models import (
     EnrollmentStatus,
@@ -123,12 +124,37 @@ class RecommendationItem(BaseModel):
     """Deterministic, explainable next learning action recommendation."""
 
     id: str
-    action_type: str  # 'continue_course', 'practice_skill', 'take_assessment', 'explore_next'
+    action_type: str = "explore_next"  # 'continue_course', 'practice_skill', 'take_assessment', 'explore_next'
+    type: str = "explore_next"  # API.md and UI backwards-compatible type field
     title: str
-    description: str
+    description: str = ""
     reason: str
-    link: str
+    link: str = ""
     badge: str | None = None
+    course_slug: str | None = None
+    lesson_slug: str | None = None
+    skill_slug: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_type_and_action_type(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Synchronize action_type and type
+            if "action_type" in data and not data.get("type"):
+                data["type"] = data["action_type"]
+            elif "type" in data and not data.get("action_type"):
+                data["action_type"] = data["type"]
+            if not data.get("type") and not data.get("action_type"):
+                data["type"] = "recommendation"
+                data["action_type"] = "recommendation"
+
+            # Auto-construct link if missing but course_slug is present
+            if not data.get("link") and data.get("course_slug"):
+                if data.get("lesson_slug"):
+                    data["link"] = f"/learn/{data['course_slug']}/{data['lesson_slug']}"
+                else:
+                    data["link"] = f"/courses/{data['course_slug']}"
+        return data
 
 
 class PrerequisiteStatusItem(BaseModel):
@@ -173,8 +199,19 @@ class DashboardSummaryResponse(BaseModel):
     skills_learning_count: int = 0
     skills_mastered_count: int = 0
     skills: list[SkillMasteryResponse] = Field(default_factory=list)
+    skills_summary: list[SkillMasteryResponse] = Field(default_factory=list)
     recent_attempts: list[RecentAttemptItem] = Field(default_factory=list)
     achievements: list[AchievementResponse] = Field(default_factory=list)
     achievements_earned_count: int = 0
     achievements_total_count: int = 0
     recommendations: list[RecommendationItem] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_skills(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "skills" in data and not data.get("skills_summary"):
+                data["skills_summary"] = data["skills"]
+            elif "skills_summary" in data and not data.get("skills"):
+                data["skills"] = data["skills_summary"]
+        return data

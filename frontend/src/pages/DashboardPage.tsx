@@ -120,7 +120,7 @@ export const DashboardPage: React.FC = () => {
     const achievements = dashboardData.achievements || []
     const recommendations = dashboardData.recommendations || []
     const recentAttempts = dashboardData.recent_attempts || []
-    const skills = dashboardData.skills_summary || []
+    const skills = dashboardData.skills_summary || dashboardData.skills || []
 
     const masteredSkills = skills.filter((s) => s.status === 'MASTERED')
     const practicingSkills = skills.filter((s) => s.status === 'PRACTICING' || s.status === 'PROVISIONAL')
@@ -381,34 +381,39 @@ export const DashboardPage: React.FC = () => {
 
             {recommendations.length > 0 ? (
               <div className="space-y-3">
-                {recommendations.map((rec, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3.5 rounded-xl bg-bg-base border border-border-subtle flex items-start justify-between gap-3"
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-accent-violet/10 text-accent-violet font-semibold">
-                          {rec.type.replace('_', ' ')}
-                        </span>
-                        <h4 className="text-xs font-bold text-text-primary truncate">
-                          {rec.title}
-                        </h4>
-                      </div>
-                      <p className="text-[11px] text-text-secondary leading-snug">
-                        {rec.reason}
-                      </p>
-                    </div>
+                {recommendations.map((rec, idx) => {
+                  const badgeLabel = (rec.type || rec.action_type || rec.badge || 'Recommendation').replace(/_/g, ' ')
+                  const targetLink = rec.link || (rec.course_slug ? `/courses/${rec.course_slug}` : undefined)
 
-                    {rec.course_slug && (
-                      <Link to={`/courses/${rec.course_slug}`} className="shrink-0 self-center">
-                        <Button variant="outline" size="sm" className="text-xs">
-                          Go
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                ))}
+                  return (
+                    <div
+                      key={rec.id || idx}
+                      className="p-3.5 rounded-xl bg-bg-base border border-border-subtle flex items-start justify-between gap-3"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-accent-violet/10 text-accent-violet font-semibold">
+                            {badgeLabel}
+                          </span>
+                          <h4 className="text-xs font-bold text-text-primary truncate">
+                            {rec.title}
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-text-secondary leading-snug">
+                          {rec.reason || rec.description}
+                        </p>
+                      </div>
+
+                      {targetLink && (
+                        <Link to={targetLink} className="shrink-0 self-center">
+                          <Button variant="outline" size="sm" className="text-xs">
+                            Go
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <p className="text-xs text-text-muted py-6 text-center">

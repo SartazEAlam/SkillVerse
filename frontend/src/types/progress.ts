@@ -98,11 +98,17 @@ export interface ResumeLearningItem {
 }
 
 export interface RecommendationItem {
-  type: 'resume' | 'next_course' | 'review_skill'
+  id?: string
+  type?: string
+  action_type?: string
   title: string
+  description?: string
   reason: string
-  course_slug: string | null
-  skill_slug: string | null
+  link?: string
+  badge?: string | null
+  course_slug?: string | null
+  lesson_slug?: string | null
+  skill_slug?: string | null
 }
 
 export interface RecentAttemptItem {
@@ -134,9 +140,16 @@ export interface CoursePrerequisites {
 
 export interface DashboardSummary {
   enrolled_courses: Enrollment[]
+  in_progress_courses_count?: number
+  completed_courses_count?: number
   resume_learning: ResumeLearningItem | null
-  skills_summary: SkillMastery[]
+  skills_learning_count?: number
+  skills_mastered_count?: number
+  skills?: SkillMastery[]
+  skills_summary?: SkillMastery[]
   recent_attempts: RecentAttemptItem[]
   achievements: Achievement[]
+  achievements_earned_count?: number
+  achievements_total_count?: number
   recommendations: RecommendationItem[]
 }

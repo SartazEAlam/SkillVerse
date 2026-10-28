@@ -250,4 +250,47 @@ describe('Phase 6 — Progression and Dashboard UI Integration', () => {
       expect(screen.getByRole('button', { name: /prerequisites required/i })).toBeDisabled()
     })
   })
+
+  it('renders dashboard recommendations safely when type is undefined or malformed', async () => {
+    const dashboardWithMissingType: DashboardSummary = {
+      ...sampleDashboard,
+      recommendations: [
+        {
+          id: 'rec-1',
+          action_type: 'continue_course',
+          // type is intentionally undefined to replicate original runtime crash
+          title: 'Continue: Semantic Elements in HTML5',
+          reason: 'Active course in progress.',
+          link: '/learn/web-dev-foundations/semantic-html',
+        } as any,
+        {
+          id: 'rec-2',
+          // both type and action_type are missing
+          title: 'Review Key Vocabulary',
+          reason: 'Improve retention.',
+        } as any,
+      ],
+    }
+
+    vi.mocked(progressApi.getDashboardSummary).mockResolvedValueOnce(dashboardWithMissingType)
+
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText(/continue: semantic elements in html5/i)).toBeInTheDocument()
+    })
+
+    // Verify badge label falls back cleanly without TypeError
+    expect(screen.getByText(/continue course/i)).toBeInTheDocument()
+    expect(screen.getByText(/^Recommendation$/i)).toBeInTheDocument()
+    expect(screen.getByText(/review key vocabulary/i)).toBeInTheDocument()
+
+    // Verify Go button link resolution
+    const linkEl = screen.getByRole('link', { name: /go/i })
+    expect(linkEl).toHaveAttribute('href', '/learn/web-dev-foundations/semantic-html')
+  })
 })

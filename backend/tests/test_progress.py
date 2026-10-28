@@ -544,6 +544,14 @@ class TestResumeLearningAndDashboard:
         assert "first_lesson" in earned_slugs
         assert "perfect_score" in earned_slugs
 
+        # Recommendations contract regression check
+        assert "recommendations" in dash
+        assert len(dash["recommendations"]) >= 1
+        for rec in dash["recommendations"]:
+            assert "type" in rec and rec["type"] is not None
+            assert "action_type" in rec and rec["action_type"] is not None
+            assert "link" in rec and rec["link"] is not None
+
 
 class TestSkillMasteryAttributionRegression:
     """Focused regression tests demonstrating strict skill mastery attribution."""
