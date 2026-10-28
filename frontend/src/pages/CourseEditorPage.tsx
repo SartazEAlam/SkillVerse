@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -39,6 +39,9 @@ export const CourseEditorPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
 
   const [selectedLesson, setSelectedLesson] = useState<ApiLessonDetail | null>(null)
+  const selectedLessonRef = useRef<ApiLessonDetail | null>(null)
+  selectedLessonRef.current = selectedLesson
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('metadata')
 
   const [availableSkills, setAvailableSkills] = useState<SkillOption[]>([])
@@ -61,17 +64,22 @@ export const CourseEditorPage: React.FC = () => {
       setAvailableSkills(skillsData)
 
       // Re-resolve selected lesson if target requested or already selected
-      const targetLessonId = keepSelectedLessonId || selectedLesson?.id
+      const targetLessonId = keepSelectedLessonId || selectedLessonRef.current?.id
       if (targetLessonId && courseData.modules) {
+        let found = false
         for (const mod of courseData.modules) {
           const matching = mod.lessons.find((l) => l.id === targetLessonId)
           if (matching) {
             setSelectedLesson(matching)
+            found = true
             break
           }
         }
-      } else if (!selectedLesson && courseData.modules?.length > 0 && courseData.modules[0].lessons?.length > 0) {
-        // Auto-select first lesson if none selected
+        if (!found && courseData.modules.length > 0 && courseData.modules[0].lessons?.length > 0) {
+          setSelectedLesson(courseData.modules[0].lessons[0])
+        }
+      } else if (!selectedLessonRef.current && courseData.modules?.length > 0 && courseData.modules[0].lessons?.length > 0) {
+        // Auto-select first lesson if none selected on initial mount
         setSelectedLesson(courseData.modules[0].lessons[0])
         setActiveTab('blocks')
       }
@@ -81,7 +89,7 @@ export const CourseEditorPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [courseId, selectedLesson])
+  }, [courseId])
 
   useEffect(() => {
     loadCourseDraft()
@@ -95,15 +103,25 @@ export const CourseEditorPage: React.FC = () => {
   }
 
   const handleLessonSaved = () => {
-    if (courseId && selectedLesson) {
-      loadCourseDraft(selectedLesson.id)
+    if (courseId && selectedLessonRef.current) {
+      loadCourseDraft(selectedLessonRef.current.id)
     }
   }
 
   const handlePublished = (result: CoursePublishResponse) => {
     setPublishSuccessBanner(result)
-    loadCourseDraft(selectedLesson?.id)
+    loadCourseDraft(selectedLessonRef.current?.id)
   }
+
+  const initialBlocks = useMemo(
+    () =>
+      (selectedLesson?.blocks || []).map((b) => ({
+        id: b.id,
+        type: b.block_type,
+        data: (b.content || {}) as Record<string, unknown>,
+      })),
+    [selectedLesson?.id, selectedLesson?.blocks]
+  )
 
   // ── Render States ────────────────────────────────────────────────────────
 
@@ -340,16 +358,11 @@ export const CourseEditorPage: React.FC = () => {
               {activeTab === 'blocks' && selectedLesson && (
                 <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 sm:p-8 shadow-xs">
                   <LessonBlocksEditor
+                    key={selectedLesson.id}
                     courseId={course.id}
                     lessonId={selectedLesson.id}
                     lessonTitle={selectedLesson.title}
-                    initialBlocks={
-                      (selectedLesson.blocks || []).map((b) => ({
-                        id: b.id,
-                        type: b.block_type,
-                        data: (b.content || {}) as Record<string, unknown>,
-                      }))
-                    }
+                    initialBlocks={initialBlocks}
                     onSaved={handleLessonSaved}
                   />
                 </div>
@@ -358,6 +371,7 @@ export const CourseEditorPage: React.FC = () => {
               {activeTab === 'activities' && selectedLesson && (
                 <div className="bg-bg-surface border border-border-subtle rounded-2xl p-6 sm:p-8 shadow-xs">
                   <ActivityAuthoringPanel
+                    key={selectedLesson.id}
                     lessonId={selectedLesson.id}
                     lessonTitle={selectedLesson.title}
                     activities={lessonActivities}
