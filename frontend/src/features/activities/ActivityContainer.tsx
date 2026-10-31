@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Lock,
   Layers,
+  Lightbulb,
 } from 'lucide-react'
 import type { ActivityDetail, AttemptResponse } from '../../types/activity'
 import {
@@ -13,6 +14,7 @@ import {
   fetchActivityAttempts,
   submitActivityAttempt,
 } from '../../services/activityApi'
+import { aiApi } from '../../services/aiApi'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { ActivityRenderer } from './ActivityRenderer'
@@ -43,6 +45,11 @@ export const ActivityContainer: React.FC<ActivityContainerProps> = ({
 
   const [latestAttempt, setLatestAttempt] = useState<AttemptResponse | null>(null)
   const [attempts, setAttempts] = useState<AttemptResponse[]>([])
+
+  // Phase 8: Progressive Hints
+  const [hints, setHints] = useState<Array<{ level: number; text: string; provider: string }>>([])
+  const [isRequestingHint, setIsRequestingHint] = useState<boolean>(false)
+  const [hintError, setHintError] = useState<string | null>(null)
 
   // 1. Fetch activity definition
   useEffect(() => {
@@ -206,6 +213,37 @@ export const ActivityContainer: React.FC<ActivityContainerProps> = ({
     setSubmitError(null)
   }
 
+  // 6. Handle Progressive Hint Request
+  const handleRequestHint = async () => {
+    if (!activity || isRequestingHint) return
+    const nextLevel = hints.length + 1
+    if (nextLevel > 3) return
+
+    setIsRequestingHint(true)
+    setHintError(null)
+
+    try {
+      const res = await aiApi.getActivityHint({
+        activity_id: activity.id,
+        hint_level: nextLevel,
+      })
+      setHints((prev) => [
+        ...prev,
+        { level: res.hint_level, text: res.hint, provider: res.provider },
+      ])
+    } catch (err: any) {
+      if (err?.code === 'AI_FEATURE_OPTED_OUT' || err?.status === 403) {
+        setHintError('AI hints are disabled in your profile preferences.')
+      } else if (err?.code === 'RATE_LIMIT_EXCEEDED' || err?.status === 429) {
+        setHintError('Hourly hint limit reached (10/hr). Try breaking the problem down into smaller parts!')
+      } else {
+        setHintError(err?.message || 'Failed to retrieve progressive hint.')
+      }
+    } finally {
+      setIsRequestingHint(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 rounded-2xl bg-bg-surface border border-border-subtle my-6 animate-pulse space-y-4">
@@ -288,6 +326,54 @@ export const ActivityContainer: React.FC<ActivityContainerProps> = ({
         />
       )}
 
+      {/* Progressive Hints Area */}
+      {hints.length > 0 && (
+        <div className="space-y-2.5 pt-3 border-t border-border-subtle">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+              <Lightbulb className="w-3.5 h-3.5 text-accent-cyan" />
+              <span>Progressive Hint Guidance ({hints.length}/3)</span>
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent-cyan/10 text-accent-cyan uppercase">
+              {hints[hints.length - 1].provider}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {hints.map((h) => (
+              <div
+                key={h.level}
+                className="p-3.5 rounded-xl bg-accent-cyan/5 border border-accent-cyan/25 text-xs text-text-secondary leading-relaxed space-y-1"
+              >
+                <div className="font-semibold text-accent-cyan flex items-center gap-1.5">
+                  <span>Level {h.level}</span>
+                  <span className="text-text-muted">•</span>
+                  <span>
+                    {h.level === 1
+                      ? 'Directional Nudge'
+                      : h.level === 2
+                      ? 'Core Principle'
+                      : 'Structural Guidance'}
+                  </span>
+                </div>
+                <div className="text-text-primary whitespace-pre-wrap">{h.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Hint Error Alert */}
+      {hintError && (
+        <div
+          role="alert"
+          className="p-3 rounded-xl bg-state-warning/10 border border-state-warning/30 text-state-warning text-xs flex items-center gap-2"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{hintError}</span>
+        </div>
+      )}
+
       {/* Local / Server Validation Error Notification */}
       {submitError && (
         <div
@@ -306,6 +392,21 @@ export const ActivityContainer: React.FC<ActivityContainerProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Progressive Hint Trigger Button */}
+          {user && !isGraded && hints.length < 3 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              isLoading={isRequestingHint}
+              leftIcon={<Lightbulb className="w-4 h-4 text-accent-cyan" />}
+              onClick={handleRequestHint}
+              aria-label="Request progressive hint"
+            >
+              {hints.length === 0 ? 'Need a Hint?' : `Hint (${hints.length + 1}/3)`}
+            </Button>
+          )}
+
           {!user ? (
             <div className="flex items-center gap-2 text-xs text-text-muted">
               <Lock className="w-3.5 h-3.5 text-accent-violet" />

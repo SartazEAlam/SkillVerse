@@ -9,6 +9,7 @@ export interface User {
   avatar_url?: string | null
   bio?: string | null
   timezone?: string | null
+  preferences?: Record<string, any> | null
   created_at: string
 }
 
@@ -16,6 +17,7 @@ export interface UserPreferences {
   theme?: string
   reduced_motion?: boolean
   language?: string
+  ai_opt_out?: boolean
 }
 
 export interface AuthResponse {

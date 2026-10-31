@@ -944,7 +944,49 @@ class ProgressionService:
                         )
                     )
 
-        # 3. Check for unenrolled published courses whose prerequisites are satisfied
+        # 3. Check for skills with mastery gaps (PRACTICING or NEEDS_REVIEW)
+        weak_mastery = self.db.scalars(
+            select(SkillMastery)
+            .options(joinedload(SkillMastery.skill))
+            .where(
+                SkillMastery.user_id == user_id,
+                SkillMastery.status.in_([
+                    SkillMasteryStatus.PRACTICING.value,
+                    SkillMasteryStatus.NEEDS_REVIEW.value,
+                ]),
+            )
+            .order_by(SkillMastery.mastery_level.asc(), SkillMastery.last_assessed_at.desc().nullslast())
+        ).first()
+
+        if weak_mastery and weak_mastery.skill:
+            course_skill = self.db.scalars(
+                select(CourseSkill)
+                .options(joinedload(CourseSkill.course))
+                .join(Course, Course.id == CourseSkill.course_id)
+                .where(
+                    CourseSkill.skill_id == weak_mastery.skill_id,
+                    Course.status == CourseStatus.PUBLISHED,
+                )
+            ).first()
+
+            target_course = course_skill.course if (course_skill and course_skill.course) else None
+            status_label = weak_mastery.status.replace("_", " ").title()
+            recs.append(
+                RecommendationItem(
+                    id=f"rec-practice-{weak_mastery.skill.slug}",
+                    action_type="practice_skill",
+                    type="practice_skill",
+                    title=f"Practice Skill: {weak_mastery.skill.name}",
+                    description=f"Strengthen your proficiency in {weak_mastery.skill.name} to advance your mastery level.",
+                    reason=f"Skill is currently in {status_label} status.",
+                    link=f"/courses/{target_course.slug}" if target_course else "/skills",
+                    badge="Skill Gap",
+                    skill_slug=weak_mastery.skill.slug,
+                    course_slug=target_course.slug if target_course else None,
+                )
+            )
+
+        # 4. Check for unenrolled published courses whose prerequisites are satisfied
         enrolled_course_ids = self.db.scalars(
             select(Enrollment.course_id).where(Enrollment.user_id == user_id)
         ).all()

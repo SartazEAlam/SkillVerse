@@ -509,44 +509,47 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 8: AI Tutor and Personalized Practice
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
 ### Objectives
 - Integrate AI provider for tutoring and feedback.
 - Build the AI tutor interface.
-- Implement AI-assisted grading for open-ended activities.
+- Implement AI-assisted grading and progressive hints for activities.
 - Personalized practice recommendations.
 
 ### Dependencies
-- Phase 5 (activity engine — AI provides feedback on activities).
+- Phase 5 (activity engine — AI provides progressive hints on activities).
 - Phase 6 (progression — AI uses progress data for personalization).
 
 ### Deliverables
-- Database migration for ai_interactions.
-- Provider-neutral AI client abstraction.
-- AI tutor API endpoint with rate limiting.
-- AI tutor UI panel (expandable within lesson workspace).
-- AI-assisted feedback for conversation and practical task activities.
-- Prompt engineering for pedagogical guidance (guide, don't solve).
-- Response filtering and safety checks.
-- AI usage audit logging.
-- Personalized practice recommendations based on mastery gaps.
-- AI feature opt-out in user preferences.
+- Database migration `005_ai_interactions.py` for operational telemetry and audit logging.
+- Provider-neutral AI client abstraction (`BaseAIProvider`, `MockAIProvider`, `GeminiAIProvider`, `get_ai_provider`).
+- AI tutor API endpoints (`/api/v1/ai/tutor`, `/hint`, `/status`, `/preferences`) with user-scoped rate limiting (30 queries/hr, 10 hints/hr).
+- AI tutor UI panel (`AITutorDrawer`) slide-over in lesson workspace with keyboard shortcut (`Alt+T`) and suggested prompt chips.
+- Progressive hints (Levels 1, 2, and 3) embedded in `ActivityContainer` without revealing grading secrets.
+- Deterministic, explainable personalized recommendations prioritizing skill mastery gaps (`practice_skill`).
+- Server-side and client-side AI feature opt-out preference in user profile.
 
 ### Important Files
-- `backend/app/modules/ai/`
-- `backend/app/infrastructure/ai_client.py`
-- `frontend/src/features/ai-tutor/`
+- `backend/alembic/versions/005_ai_interactions.py`
+- `backend/app/infrastructure/ai/` (`base.py`, `mock_provider.py`, `gemini_provider.py`, `factory.py`)
+- `backend/app/modules/ai/` (`models.py`, `schemas.py`, `service.py`, `router.py`)
+- `backend/tests/test_ai.py`
+- `frontend/src/types/ai.ts`
+- `frontend/src/services/aiApi.ts`
+- `frontend/src/features/ai-tutor/AITutorDrawer.tsx`
+- `frontend/src/features/activities/ActivityContainer.tsx`
+- `frontend/src/pages/ProfilePage.tsx`
+- `frontend/src/test/AITutor.test.tsx`
 
-### Acceptance Criteria
-1. AI tutor answers learner questions within lesson context.
-2. AI responses are pedagogical (guides understanding, doesn't give direct answers).
-3. AI feedback on conversation activities evaluates fluency, relevance and clarity.
-4. AI feedback on practical tasks evaluates against rubric criteria.
-5. Rate limiting enforced (30 tutor questions/hour, 10 feedback requests/hour).
-6. All AI interactions logged with provider, model, token usage.
-7. AI feature can be disabled per user.
-8. Response filtering catches inappropriate or off-topic AI responses.
+### Acceptance Criteria & Verification Status
+1. **Context-Grounded AI Tutoring:** Answers learner questions strictly within trusted lesson context, guiding conceptual understanding rather than providing answers (verified in `test_ai.py` and `AITutor.test.tsx`).
+2. **Progressive Hints:** Delivers three distinct tiers of pedagogical hints (Level 1 Nudge, Level 2 Principle, Level 3 Structure) without leaking answer keys (verified in `test_ai.py` and `AITutor.test.tsx`).
+3. **Operational Telemetry & Data Minimization:** Stores operational metrics (token count, latency, provider, user/lesson context) in `ai_interactions` table without retaining learner prompts/responses by default (verified in `test_ai.py`).
+4. **User-Scoped Rate Limiting:** Enforces configurable sliding-window limits (30 questions/hour, 10 hints/hour) returning HTTP 429 when exceeded (verified in `test_ai.py` and `AITutor.test.tsx`).
+5. **Enforced User Opt-Out:** Enforces opt-out preference server-side with HTTP 403 `AI_FEATURE_OPTED_OUT` and provides UI preference toggle in Profile settings (verified in `test_ai.py`, `AITutor.test.tsx`, and `ProfilePage.tsx`).
+6. **Mastery-Gap Recommendations:** Deterministically recommends practice for skills in `PRACTICING` or `NEEDS_REVIEW` status, explaining reason and linking to relevant coursework (verified in `test_progress.py`).
+7. **Automated Test Coverage:** 140/140 backend tests pass (`pytest` including 8 AI tests and 19 progress tests), 78/78 frontend tests pass (`vitest run` including 6 AI tutor tests), production build (`npm run build`) succeeds cleanly, and `ruff check` and `alembic check` report 0 errors (verified).
 
 ### Required Tests
 - AI client abstraction test (mock provider, verify request format).

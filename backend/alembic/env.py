@@ -15,6 +15,7 @@ from app.infrastructure.database import Base
 
 # Import all models so Alembic can detect them
 from app.modules.activities.models import Activity, Attempt, GradingConfig  # noqa: F401
+from app.modules.ai.models import AIInteraction  # noqa: F401
 from app.modules.auth.models import OAuthAccount, RefreshToken, User, UserProfile  # noqa: F401
 from app.modules.courses.models import (  # noqa: F401
     Course,

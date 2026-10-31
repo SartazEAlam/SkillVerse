@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     email_from: str = "noreply@skillverse.dev"
 
+    # ── AI Integration (Phase 8) ─────────────────────
+    ai_provider: Literal["mock", "gemini", "disabled"] = "mock"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-1.5-flash"
+    ai_timeout_seconds: int = 15
+    ai_tutor_rate_limit: int = 30  # Max tutor requests per hour per user
+    ai_hint_rate_limit: int = 10  # Max activity hint requests per hour per user
+    ai_store_content: bool = False  # Privacy default: do not persist raw learner prompt/response text
+    ai_max_input_length: int = 1000  # Cap learner questions to 1000 characters
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: object) -> list[str]:

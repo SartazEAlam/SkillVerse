@@ -20,3 +20,4 @@ class UpdatePreferencesRequest(BaseModel):
     theme: str | None = None
     reduced_motion: bool | None = None
     language: str | None = None
+    ai_opt_out: bool | None = None

@@ -1245,6 +1245,88 @@ Key endpoints:
 
 ---
 
+## AI Tutoring & Progressive Assistance (Phase 8 Implemented)
+
+### `POST /api/v1/ai/tutor` 🔓
+Submit a question to the pedagogical AI tutor grounded strictly in lesson context.
+- Rate limit: 30 requests / hour per user.
+- Enforces `ai_opt_out` user preference (returns 403 `AI_FEATURE_OPTED_OUT` if opted out).
+
+```json
+// Request
+{
+  "lesson_id": "uuid",
+  "message": "Can you explain what a recursive base case is?",
+  "conversation_history": [
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
+  ]
+}
+
+// Response 200 OK
+{
+  "response": "In recursion, a base case is...",
+  "suggestions": [
+    "What happens without a base case?",
+    "Can you give an example in Python?"
+  ],
+  "lesson_title": "Understanding Recursion",
+  "provider": "mock"
+}
+```
+
+### `POST /api/v1/ai/hint` 🔓
+Request progressive pedagogical hints for an interactive activity without revealing grading answers.
+- `hint_level`: 1 (Directional Nudge), 2 (Core Principle), 3 (Structural Guidance).
+- Rate limit: 10 requests / hour per user.
+- Returns 403 if user has opted out of AI.
+
+```json
+// Request
+{
+  "activity_id": "uuid",
+  "hint_level": 1
+}
+
+// Response 200 OK
+{
+  "hint": "Consider the condition where no further recursive calls are triggered.",
+  "hint_level": 1,
+  "provider": "mock"
+}
+```
+
+### `GET /api/v1/ai/status` 🔓
+Retrieve the current operational status, active provider, model, and opt-out state.
+
+```json
+// Response 200 OK
+{
+  "enabled": true,
+  "provider": "mock",
+  "model": "pedagogical-rules-v1",
+  "opted_out": false
+}
+```
+
+### `PUT /api/v1/ai/preferences` 🔓
+Update AI tutoring opt-out preference for the authenticated user.
+
+```json
+// Request
+{
+  "opt_out": true
+}
+
+// Response 200 OK
+{
+  "opt_out": true,
+  "message": "AI tutoring preferences updated successfully."
+}
+```
+
+---
+
 ## Request Validation Rules
 
 1. **All request bodies** are validated against Pydantic schemas. Invalid requests receive 400 with field-level error details.

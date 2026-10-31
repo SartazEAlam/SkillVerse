@@ -16,6 +16,8 @@ interface LessonWorkspaceHeaderProps {
   isSidebarOpen: boolean
   isPreview?: boolean
   courseId?: string
+  onToggleAITutor?: () => void
+  isAITutorOpen?: boolean
 }
 
 export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
@@ -31,6 +33,8 @@ export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
   isSidebarOpen,
   isPreview = false,
   courseId,
+  onToggleAITutor,
+  isAITutorOpen = false,
 }) => {
   return (
     <header className="h-16 shrink-0 bg-bg-elevated/90 backdrop-blur-md border-b border-border-medium px-4 sm:px-6 flex items-center justify-between gap-4 z-20">
@@ -96,6 +100,25 @@ export const LessonWorkspaceHeader: React.FC<LessonWorkspaceHeaderProps> = ({
           </Badge>
         )}
 
+
+        {/* AI Tutor Toggle Button */}
+        {onToggleAITutor && (
+          <button
+            type="button"
+            onClick={onToggleAITutor}
+            aria-label="Toggle AI Tutor companion (Alt+T)"
+            aria-expanded={isAITutorOpen}
+            title="Ask AI Tutor (Alt+T)"
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+              isAITutorOpen
+                ? 'bg-accent-violet text-white border-accent-violet shadow-sm shadow-accent-violet/30'
+                : 'bg-bg-surface text-text-secondary hover:text-text-primary hover:bg-bg-elevated border-border-subtle hover:border-accent-violet/30'
+            }`}
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isAITutorOpen ? 'text-white' : 'text-accent-cyan'}`} />
+            <span className="hidden sm:inline">AI Tutor</span>
+          </button>
+        )}
 
         {/* Lesson Counter */}
         {totalLessons > 0 && (

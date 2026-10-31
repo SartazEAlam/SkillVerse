@@ -33,6 +33,7 @@ def _user_to_response(user: User) -> UserResponse:
         avatar_url=user.profile.avatar_url if user.profile else None,
         bio=user.profile.bio if user.profile else None,
         timezone=user.profile.timezone if user.profile else None,
+        preferences=user.profile.preferences if user.profile else {},
         created_at=user.created_at,
     )
 

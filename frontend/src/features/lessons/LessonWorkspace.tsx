@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext'
 import { LessonWorkspaceHeader } from './LessonWorkspaceHeader'
 import { LessonSidebar } from './LessonSidebar'
 import { LessonContent } from './LessonContent'
+import { AITutorDrawer } from '../ai-tutor/AITutorDrawer'
 import { Button } from '../../components/ui/Button'
 
 interface LessonWorkspaceProps {
@@ -33,11 +34,24 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({ isPreview: isP
   const [error, setError] = useState<{ message: string; isNotFound?: boolean } | null>(null)
   const [isDemo, setIsDemo] = useState<boolean>(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false)
+  const [isAITutorOpen, setIsAITutorOpen] = useState<boolean>(false)
 
   // Progression state (disabled in preview mode)
   const { user } = useAuth()
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null)
   const [completedLessonSlugs, setCompletedLessonSlugs] = useState<Set<string>>(new Set())
+
+  // Alt+T shortcut to toggle AI Tutor
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault()
+        setIsAITutorOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Keep reference to abort controller for stale response protection
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -526,6 +540,8 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({ isPreview: isP
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         isPreview={isPreview}
         courseId={courseId}
+        onToggleAITutor={() => setIsAITutorOpen((prev) => !prev)}
+        isAITutorOpen={isAITutorOpen}
       />
 
       {/* Main Workspace Body: Sidebar + Scrollable Content */}
@@ -561,6 +577,13 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({ isPreview: isP
           />
         </main>
       </div>
+
+      {/* AI Tutor Slide-Over Drawer */}
+      <AITutorDrawer
+        isOpen={isAITutorOpen}
+        onClose={() => setIsAITutorOpen(false)}
+        lesson={currentLesson}
+      />
     </div>
   )
 }

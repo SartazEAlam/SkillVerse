@@ -552,6 +552,30 @@ class TestResumeLearningAndDashboard:
             assert "action_type" in rec and rec["action_type"] is not None
             assert "link" in rec and rec["link"] is not None
 
+    def test_recommendations_includes_skill_gap_practice(
+        self, client: TestClient, auth_headers: dict[str, str], test_course_bundle: dict[str, str], db: Session, test_user: User
+    ) -> None:
+        """When a learner has a skill in PRACTICING or NEEDS_REVIEW status, recommendations suggest practice."""
+        db.add(
+            SkillMastery(
+                user_id=test_user.id,
+                skill_id=test_course_bundle["main_skill_id"],
+                mastery_level=45.0,
+                status=SkillMasteryStatus.PRACTICING.value,
+            )
+        )
+        db.commit()
+
+        service = ProgressionService(db)
+        recs = service.get_recommendations(test_user.id)
+        practice_recs = [r for r in recs if r.action_type == "practice_skill"]
+        assert len(practice_recs) >= 1
+        gap_rec = practice_recs[0]
+        assert gap_rec.badge == "Skill Gap"
+        assert "Practice Skill:" in gap_rec.title
+        assert "Practicing" in gap_rec.reason
+        assert gap_rec.link != ""
+
 
 class TestSkillMasteryAttributionRegression:
     """Focused regression tests demonstrating strict skill mastery attribution."""
