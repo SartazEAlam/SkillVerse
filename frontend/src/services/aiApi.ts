@@ -13,6 +13,8 @@ import type {
   AIStatusResponse,
   AITutorRequest,
   AITutorResponse,
+  CommunicationFeedbackRequest,
+  CommunicationFeedbackResponse,
 } from '../types/ai'
 
 export const aiApi = {
@@ -54,6 +56,20 @@ export const aiApi = {
   async updatePreference(data: AIPeriodicPreferenceRequest, signal?: AbortSignal): Promise<{ opt_out: boolean; message: string }> {
     return request<{ opt_out: boolean; message: string }>('/ai/preferences', {
       method: 'PUT',
+      body: JSON.stringify(data),
+      signal,
+    })
+  },
+
+  /**
+   * Request qualitative grounded feedback for a communication exercise.
+   */
+  async getCommunicationFeedback(
+    data: CommunicationFeedbackRequest,
+    signal?: AbortSignal
+  ): Promise<CommunicationFeedbackResponse> {
+    return request<CommunicationFeedbackResponse>('/ai/communication-feedback', {
+      method: 'POST',
       body: JSON.stringify(data),
       signal,
     })

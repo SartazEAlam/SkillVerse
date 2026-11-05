@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 from app.infrastructure.sandbox.runner import (
     CodeExecutionRequest,
@@ -364,7 +366,7 @@ class FillBlankGrader(BaseGrader):
 
 
 class OrderingGrader(BaseGrader):
-    """Grades sequence arrangement activities."""
+    """Grades sequence arrangement activities, supporting single or multiple acceptable orders."""
 
     def grade(
         self,
@@ -387,17 +389,38 @@ class OrderingGrader(BaseGrader):
                 code="INVALID_ITEM_SET",
             )
 
-        correct_order = answer_key.get("correct_order", [])
-        if not correct_order or len(correct_order) != len(expected_ids):
+        acceptable_orders = answer_key.get("acceptable_orders")
+        correct_order = answer_key.get("correct_order")
+
+        if not acceptable_orders and not correct_order:
             raise GradingError("Ordering answer key is misconfigured.", code="INVALID_CONFIG", status_code=500)
 
-        total_positions = len(correct_order)
-        matching_positions = sum(
-            1 for idx, item_id in enumerate(ordered_ids) if item_id == correct_order[idx]
+        candidate_orders: list[list[str]] = (
+            [order for order in acceptable_orders if isinstance(order, list)]
+            if acceptable_orders
+            else ([correct_order] if isinstance(correct_order, list) else [])
         )
 
+        if not candidate_orders:
+            raise GradingError("Ordering answer key has no valid target sequence.", code="INVALID_CONFIG", status_code=500)
+
+        total_positions = len(expected_ids)
+        best_matches = 0
+        is_exact_match = False
+
+        for candidate in candidate_orders:
+            if len(candidate) == total_positions:
+                matches = sum(
+                    1 for idx, item_id in enumerate(ordered_ids) if item_id == candidate[idx]
+                )
+                if matches > best_matches:
+                    best_matches = matches
+                if matches == total_positions:
+                    is_exact_match = True
+                    break
+
         points_per_pos = 100.0 / total_positions if total_positions > 0 else 0.0
-        score = round(matching_positions * points_per_pos, 2)
+        score = 100.0 if is_exact_match else round(best_matches * points_per_pos, 2)
         passed = score >= passing_score
 
         return GradingResult(
@@ -406,14 +429,15 @@ class OrderingGrader(BaseGrader):
             passed=passed,
             status=AttemptStatus.GRADED,
             result={
-                "matching_positions": matching_positions,
+                "matching_positions": best_matches,
                 "total_positions": total_positions,
+                "is_exact_match": is_exact_match,
             },
             feedback={
                 "message": (
                     "Perfect order!"
-                    if matching_positions == total_positions
-                    else f"{matching_positions} of {total_positions} items in correct relative position."
+                    if is_exact_match
+                    else f"{best_matches} of {total_positions} items in correct relative position."
                 ),
                 "explanation": (feedback_config or {}).get("explanation"),
             },
@@ -424,7 +448,7 @@ class OrderingGrader(BaseGrader):
 
 
 class MatchingGrader(BaseGrader):
-    """Grades bipartite matching activities between left and right item groups."""
+    """Grades bipartite matching activities between left and right item groups, supporting multi-target acceptable pairs."""
 
     def grade(
         self,
@@ -450,16 +474,25 @@ class MatchingGrader(BaseGrader):
                 raise GradingError(f"Right item '{right_id}' is invalid.", code="UNKNOWN_RIGHT_ID")
 
         key_pairs = answer_key.get("pairs", {})
-        if not key_pairs:
+        acceptable_pairs = answer_key.get("acceptable_pairs", {})
+        if not key_pairs and not acceptable_pairs:
             raise GradingError("Matching answer key is misconfigured.", code="INVALID_CONFIG", status_code=500)
 
-        total_pairs = len(key_pairs)
+        all_target_keys = set(key_pairs.keys()).union(acceptable_pairs.keys())
+        total_pairs = len(all_target_keys)
         correct_count = 0
         pair_breakdown: dict[str, bool] = {}
 
-        for left_id, expected_right in key_pairs.items():
+        for left_id in all_target_keys:
             actual_right = pairs.get(left_id)
-            matched = actual_right == expected_right
+            matched = False
+            if actual_right:
+                if left_id in key_pairs and actual_right == key_pairs[left_id]:
+                    matched = True
+                elif left_id in acceptable_pairs:
+                    acc = acceptable_pairs[left_id]
+                    if (isinstance(acc, list) and actual_right in acc) or (isinstance(acc, str) and actual_right == acc):
+                        matched = True
             pair_breakdown[left_id] = matched
             if matched:
                 correct_count += 1
@@ -615,6 +648,302 @@ class CodingGrader(BaseGrader):
         )
 
 
+# ── 10. Web Development Practice Grader ─────────────────────────────────────
+
+
+SAFE_URL_REGEX = re.compile(r"^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$")
+
+
+def _validate_safe_url(url: str, field_name: str) -> None:
+    if not url or not isinstance(url, str):
+        raise GradingError(f"{field_name} must be a valid string.", code="INVALID_URL")
+    url_trimmed = url.strip()
+    if len(url_trimmed) > 500:
+        raise GradingError(f"{field_name} exceeds maximum length of 500 characters.", code="URL_TOO_LONG")
+    if not SAFE_URL_REGEX.match(url_trimmed):
+        raise GradingError(
+            f"{field_name} contains invalid characters or unsafe scheme.",
+            code="UNSAFE_URL_SCHEME",
+        )
+    parsed = urlparse(url_trimmed)
+    if parsed.scheme.lower() not in ("http", "https"):
+        raise GradingError(
+            f"{field_name} must use http or https protocol.",
+            code="UNSAFE_URL_SCHEME",
+        )
+    if not parsed.netloc or "." not in parsed.netloc:
+        raise GradingError(
+            f"{field_name} must include a valid domain name.",
+            code="INVALID_DOMAIN",
+        )
+
+
+class WebPracticeGrader(BaseGrader):
+    """Deterministic validation and scoring for web development practice deliverables.
+
+    SECURITY INVARIANT: External URLs are strictly validated for safe protocols (HTTP/HTTPS)
+    and domain syntax. The platform NEVER fetches, executes, or sandboxes external repositories
+    or live demonstration URLs automatically during practice grading.
+    """
+
+    def grade(
+        self,
+        configuration: dict[str, Any],
+        answer_key: dict[str, Any],
+        submission: dict[str, Any],
+        passing_score: float,
+        feedback_config: dict[str, Any] | None = None,
+    ) -> GradingResult:
+        require_repo = configuration.get("require_repo_url", True)
+        require_live = configuration.get("require_live_url", False)
+        require_reflection = configuration.get("require_reflection", True)
+
+        repo_url = submission.get("repo_url")
+        live_url = submission.get("live_url")
+        notes = submission.get("implementation_notes", "")
+        completed_milestones = set(submission.get("completed_milestone_ids", []))
+        reflection_answers = submission.get("reflection_answers", {})
+        reflection_text = submission.get("reflection", "")
+
+        url_validation: dict[str, Any] = {}
+
+        # 1. URL format and protocol validation
+        if require_repo or repo_url:
+            if not repo_url:
+                raise GradingError("Repository URL is required for this exercise.", code="MISSING_REPO_URL")
+            _validate_safe_url(str(repo_url), "Repository URL")
+            url_validation["repo_url"] = "valid"
+
+        if require_live or live_url:
+            if not live_url and require_live:
+                raise GradingError("Live demonstration URL is required for this exercise.", code="MISSING_LIVE_URL")
+            if live_url:
+                _validate_safe_url(str(live_url), "Live demonstration URL")
+                url_validation["live_url"] = "valid"
+
+        # 2. Milestones validation
+        milestones = configuration.get("milestones", [])
+        required_milestone_ids = {
+            m["id"] for m in milestones if isinstance(m, dict) and m.get("required", True)
+        }
+        all_milestone_ids = {
+            m["id"] for m in milestones if isinstance(m, dict) and "id" in m
+        }
+
+        # Check for invalid milestone IDs
+        invalid_ids = completed_milestones.difference(all_milestone_ids)
+        if invalid_ids:
+            raise GradingError(
+                f"Unknown milestone ID(s): {', '.join(sorted(invalid_ids))}",
+                code="UNKNOWN_MILESTONE_ID",
+            )
+
+        # 3. Reflection validation
+        reflection_length = len(str(reflection_text).split())
+        for ans in reflection_answers.values() if isinstance(reflection_answers, dict) else []:
+            reflection_length += len(str(ans).split())
+
+        if require_reflection and reflection_length < 10:
+            raise GradingError(
+                "Technical reflection must be provided (at least 10 words).",
+                code="INSUFFICIENT_REFLECTION",
+            )
+
+        # 4. Deterministic Rubric Scoring:
+        # Deliverables (URLs & notes): 35 pts
+        # Required Milestones: 45 pts
+        # Reflection: 20 pts
+        deliverable_score = 0.0
+        if repo_url:
+            deliverable_score += 25.0
+        if live_url or not require_live:
+            deliverable_score += 10.0
+
+        milestone_score = 0.0
+        if required_milestone_ids:
+            completed_req = completed_milestones.intersection(required_milestone_ids)
+            milestone_score = (len(completed_req) / len(required_milestone_ids)) * 45.0
+        else:
+            milestone_score = 45.0
+
+        reflection_score = 0.0
+        if require_reflection:
+            reflection_score = 20.0 if reflection_length >= 10 else 10.0
+        else:
+            reflection_score = 20.0
+
+        total_score = round(min(100.0, deliverable_score + milestone_score + reflection_score), 2)
+        passed = total_score >= passing_score
+
+        return GradingResult(
+            score=total_score,
+            max_score=100.0,
+            passed=passed,
+            status=AttemptStatus.GRADED,
+            result={
+                "url_validation": url_validation,
+                "completed_milestones_count": len(completed_milestones),
+                "required_milestones_total": len(required_milestone_ids),
+                "reflection_words": reflection_length,
+            },
+            feedback={
+                "message": (
+                    "Web development deliverables verified and milestones satisfied!"
+                    if passed
+                    else "Deliverables submitted, but passing criteria threshold was not reached."
+                ),
+                "url_validation": url_validation,
+                "milestones_completed": f"{len(completed_milestones)} of {len(all_milestone_ids)} milestones completed",
+                "notes_provided": bool(notes and len(str(notes).strip()) > 0),
+                "security_notice": "URLs were validated for safe schemes and domain format. External repositories/demonstrations are not executed or fetched automatically.",
+                "explanation": (feedback_config or {}).get("explanation"),
+            },
+        )
+
+
+# ── 11. Communication Practice Grader (BLUF & STAR) ─────────────────────────
+
+
+class CommunicationGrader(BaseGrader):
+    """Deterministic structural verification and scoring for professional communication practice (BLUF and STAR)."""
+
+    def grade(
+        self,
+        configuration: dict[str, Any],
+        answer_key: dict[str, Any],
+        submission: dict[str, Any],
+        passing_score: float,
+        feedback_config: dict[str, Any] | None = None,
+    ) -> GradingResult:
+        comm_format = str(submission.get("format") or configuration.get("format", "bluf")).lower()
+        if comm_format not in ("bluf", "star"):
+            raise GradingError(f"Unsupported communication format: '{comm_format}'", code="UNKNOWN_FORMAT")
+
+        sections = submission.get("sections")
+        if not isinstance(sections, dict):
+            raise GradingError("sections must be a dictionary of section names to written responses.", code="INVALID_SUBMISSION")
+
+        reflection = str(submission.get("reflection") or "").strip()
+        section_breakdown: dict[str, Any] = {}
+        total_words = 0
+
+        if reflection:
+            refl_words = len(reflection.split())
+            section_breakdown["reflection"] = {
+                "word_count": refl_words,
+                "meets_requirements": refl_words >= 5,
+                "status": "complete" if refl_words >= 5 else "brief",
+            }
+            total_words += refl_words
+
+        if comm_format == "bluf":
+            # BLUF: Bottom Line Up Front
+            # Expected sections: bottom_line, context_details, next_steps
+            expected_keys = ["bottom_line", "context_details", "next_steps"]
+            bl_text = str(sections.get("bottom_line", "")).strip()
+            if not bl_text:
+                raise GradingError("Bottom Line (BLUF) is required and cannot be empty.", code="MISSING_BLUF")
+
+            bl_words = len(bl_text.split())
+            if bl_words < 5:
+                raise GradingError("Bottom line must be a concise, substantive statement (at least 5 words).", code="BLUF_TOO_SHORT")
+
+            section_breakdown["bottom_line"] = {
+                "word_count": bl_words,
+                "meets_requirements": bl_words >= 5,
+                "status": "complete",
+            }
+            total_words += bl_words
+
+            details_text = str(sections.get("context_details", "")).strip()
+            details_words = len(details_text.split())
+            section_breakdown["context_details"] = {
+                "word_count": details_words,
+                "meets_requirements": details_words >= 10,
+                "status": "complete" if details_words >= 10 else "needs_substance",
+            }
+            total_words += details_words
+
+            steps_text = str(sections.get("next_steps", "")).strip()
+            steps_words = len(steps_text.split())
+            section_breakdown["next_steps"] = {
+                "word_count": steps_words,
+                "meets_requirements": steps_words >= 5,
+                "status": "complete" if steps_words >= 5 else "needs_substance",
+            }
+            total_words += steps_words
+
+            # Scoring:
+            # bottom_line: 40 pts
+            # context_details: 35 pts
+            # next_steps: 25 pts
+            score = 0.0
+            if bl_words >= 5:
+                score += 40.0
+            if details_words >= 10:
+                score += 35.0
+            elif details_words > 0:
+                score += 20.0
+            if steps_words >= 5:
+                score += 25.0
+            elif steps_words > 0:
+                score += 15.0
+
+        else:
+            # STAR: Situation, Task, Action, Result
+            expected_keys = ["situation", "task", "action", "result"]
+            score = 0.0
+            for key in expected_keys:
+                sec_text = str(sections.get(key, "")).strip()
+                sec_words = len(sec_text.split()) if sec_text else 0
+                total_words += sec_words
+
+                meets_req = sec_words >= 10
+                section_breakdown[key] = {
+                    "word_count": sec_words,
+                    "meets_requirements": meets_req,
+                    "status": "complete" if meets_req else ("incomplete" if sec_words > 0 else "missing"),
+                }
+                if meets_req:
+                    score += 25.0
+                elif sec_words >= 5:
+                    score += 15.0
+
+        # Word count range enforcement if configured
+        min_total = configuration.get("min_total_words")
+        max_total = configuration.get("max_total_words")
+        if min_total and total_words < min_total:
+            score = max(0.0, score - 15.0)
+        if max_total and total_words > max_total:
+            score = max(0.0, score - 10.0)
+
+        passed = score >= passing_score
+
+        return GradingResult(
+            score=round(score, 2),
+            max_score=100.0,
+            passed=passed,
+            status=AttemptStatus.GRADED,
+            result={
+                "format": comm_format,
+                "total_words": total_words,
+                "section_breakdown": section_breakdown,
+            },
+            feedback={
+                "message": (
+                    f"Professional {comm_format.upper()} structure verified successfully!"
+                    if passed
+                    else f"Response submitted, but some {comm_format.upper()} sections were incomplete or too brief."
+                ),
+                "format": comm_format,
+                "total_words": total_words,
+                "section_breakdown": section_breakdown,
+                "qualitative_notice": "This score is based on structural completeness and length requirements. Use the AI Writing Review button for qualitative feedback on tone, clarity, and impact.",
+                "explanation": (feedback_config or {}).get("explanation"),
+            },
+        )
+
+
 # ── Unified Grading Engine Dispatcher ────────────────────────────────────────
 
 
@@ -632,6 +961,8 @@ class GradingEngine:
             ActivityType.MATCHING: MatchingGrader(),
             ActivityType.SCENARIO: ScenarioGrader(),
             ActivityType.CODE_EXERCISE: CodingGrader(),
+            ActivityType.WEB_PRACTICE: WebPracticeGrader(),
+            ActivityType.COMMUNICATION: CommunicationGrader(),
         }
 
     def grade(

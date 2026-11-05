@@ -32,6 +32,14 @@ from app.modules.progress.models import (  # noqa: F401
     SkillMastery,
     UserAchievement,
 )
+from app.modules.projects.models import (  # noqa: F401
+    Portfolio,
+    PortfolioItem,
+    Project,
+    ProjectArtifact,
+    ProjectSkill,
+    ProjectSubmission,
+)
 from app.modules.skills.models import Discipline, Skill, SkillPrerequisite  # noqa: F401
 
 config = context.config

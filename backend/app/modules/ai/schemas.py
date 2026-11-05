@@ -96,3 +96,23 @@ class AIPeriodicPreferenceRequest(BaseModel):
             elif "ai_opt_out" in data and "opt_out" not in data:
                 data["opt_out"] = data["ai_opt_out"]
         return data
+
+
+class CommunicationFeedbackRequest(BaseModel):
+    """Request for qualitative AI feedback on communication practice (BLUF or STAR)."""
+
+    activity_id: str
+    sections: dict[str, str] = Field(..., min_length=1)
+    reflection: str | None = Field(default=None, max_length=5000)
+
+
+class CommunicationFeedbackResponse(BaseModel):
+    """Qualitative review response returned by AI."""
+
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    actionable_tips: list[str] = Field(default_factory=list)
+    provider: str
+    model: str
+    tokens_used: int = 0

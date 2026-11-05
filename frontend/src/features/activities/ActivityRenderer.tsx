@@ -9,6 +9,8 @@ import { OrderingActivity } from './OrderingActivity'
 import { MatchingActivity } from './MatchingActivity'
 import { ScenarioActivity } from './ScenarioActivity'
 import { CodingActivity } from './CodingActivity'
+import { WebPracticeActivity } from './WebPracticeActivity'
+import { CommunicationActivity } from './CommunicationActivity'
 
 interface ActivityRendererProps {
   activity: ActivityDetail
@@ -142,6 +144,41 @@ export const ActivityRenderer: React.FC<ActivityRendererProps> = ({
               : config.starter_code || ''
           }
           onChange={(code) => onSubmissionChange({ code, language: config.language })}
+          disabled={disabled}
+        />
+      )
+
+    case 'web_practice':
+      return (
+        <WebPracticeActivity
+          problemStatement={config.problem_statement}
+          learningObjectives={config.learning_objectives || []}
+          milestones={config.milestones || []}
+          requireRepoUrl={config.require_repo_url !== false}
+          requireLiveUrl={Boolean(config.require_live_url)}
+          requireReflection={config.require_reflection !== false}
+          submission={submissionState}
+          onChange={(updated) => onSubmissionChange(updated)}
+          disabled={disabled}
+        />
+      )
+
+    case 'communication':
+      return (
+        <CommunicationActivity
+          activityId={activity.id}
+          config={{
+            format: config.format || 'bluf',
+            scenario: config.scenario || '',
+            audience: config.audience,
+            objective: config.objective,
+            rubric_criteria: config.rubric_criteria,
+            min_words: config.min_words,
+            max_words: config.max_words,
+            sections: config.sections,
+          }}
+          submission={submissionState}
+          onChange={(updated) => onSubmissionChange(updated)}
           disabled={disabled}
         />
       )

@@ -16,6 +16,8 @@ from app.modules.ai.schemas import (
     ActivityHintResponse,
     AIPeriodicPreferenceRequest,
     AIStatusResponse,
+    CommunicationFeedbackRequest,
+    CommunicationFeedbackResponse,
     TutorChatRequest,
     TutorChatResponse,
 )
@@ -114,6 +116,22 @@ def get_activity_hint(
         lesson_id=body.lesson_id,
         hint_level=body.hint_level,
     )
+
+
+@router.post("/communication-feedback", response_model=CommunicationFeedbackResponse)
+def get_communication_feedback(
+    body: CommunicationFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    service: AIService = Depends(_get_ai_service),
+) -> CommunicationFeedbackResponse:
+    """Request qualitative AI writing feedback for professional communication practice.
+
+    Provides constructive observations on clarity, conciseness, and tone.
+    Does not mutate authoritative attempt scores.
+    """
+    _check_hint_rate_limit(current_user)
+
+    return service.review_communication(user=current_user, request=body)
 
 
 @router.get("/status", response_model=AIStatusResponse)

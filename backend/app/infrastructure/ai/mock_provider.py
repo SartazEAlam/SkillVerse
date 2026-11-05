@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from app.infrastructure.ai.base import (
     ActivityHintContext,
+    AICommunicationFeedbackResponse,
     AIHintResponse,
     AITutorResponse,
     BaseAIProvider,
     ChatMessage,
+    CommunicationFeedbackContext,
     LessonContext,
 )
 
@@ -113,6 +115,64 @@ class MockAIProvider(BaseAIProvider):
             hint=hint,
             hint_level=clamped_level,
             max_level=3,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            provider="mock",
+            model=self.model_name,
+        )
+
+    def review_communication(
+        self,
+        context: CommunicationFeedbackContext,
+    ) -> AICommunicationFeedbackResponse:
+        """Provide constructive qualitative writing guidance on BLUF or STAR submissions."""
+        fmt = context.format.lower()
+        if fmt == "bluf":
+            summary = (
+                f"Your BLUF communication demonstrates good intent for '{context.title}'. "
+                f"Placing the key outcome directly up front ensures the reader immediately grasps the priority."
+            )
+            strengths = [
+                "Clear statement of the primary conclusion or request.",
+                "Organized structural separation between summary and context.",
+            ]
+            improvements = [
+                "Consider refining the bottom line to be even more action-oriented.",
+                "Ensure timelines or deadlines in next steps are explicit rather than implicit.",
+            ]
+            actionable_tips = [
+                f"Start with a strong active verb: 'Requesting approval for...' or 'Notifying team of...' for audience '{context.audience or 'stakeholders'}'.",
+                "Keep sentences under 25 words to maximize executive readability.",
+            ]
+        else:
+            # STAR
+            summary = (
+                f"Structured STAR interview response for '{context.title}' covering "
+                f"the {context.competency or 'target'} competency."
+            )
+            strengths = [
+                "Followed the sequential four-part STAR framework.",
+                "Described concrete actions taken rather than generic team efforts.",
+            ]
+            improvements = [
+                "Quantify the Result section with specific metrics or percentage improvements if available.",
+                "Clarify the initial challenge in Situation to contrast the positive outcome.",
+            ]
+            actionable_tips = [
+                "Use the 'So that...' phrasing in Task to clarify the business stakes.",
+                "Frame Results around long-term impact on team velocity or system reliability.",
+            ]
+
+        total_words = sum(len(txt.split()) for txt in context.learner_sections.values())
+        prompt_tokens = total_words + 40
+        completion_tokens = 90
+
+        return AICommunicationFeedbackResponse(
+            summary=summary,
+            strengths=strengths,
+            improvements=improvements,
+            actionable_tips=actionable_tips,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,

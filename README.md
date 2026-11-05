@@ -63,8 +63,8 @@ SkillVerse/
 ├── backend/                 # FastAPI application (Phases 2–8)
 │   ├── alembic/             # Versioned database migrations
 │   ├── app/
-│   │   ├── infrastructure/  # Database session, rate limiter, AI provider abstraction (mock, gemini)
-│   │   ├── modules/         # auth, users, courses, activities, progress, skills, ai
+│   │   ├── infrastructure/  # Database session, rate limiter, AI providers, artifact storage (local/S3)
+│   │   ├── modules/         # auth, users, courses, activities, progress, skills, ai, projects
 │   │   ├── config.py        # Pydantic Settings with production invariants
 │   │   └── main.py          # FastAPI application entry & CORS middleware
 │   ├── tests/               # Pytest unit and integration test suite (SQLite test harness)

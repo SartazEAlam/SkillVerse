@@ -66,12 +66,15 @@ class LessonCompleteResponse(BaseModel):
 
 
 class SkillEvidenceItem(BaseModel):
-    """Specific verifiable assessment attempt providing evidence of competency."""
+    """Specific verifiable assessment attempt or project submission providing evidence of competency."""
 
-    activity_id: str
-    activity_title: str
-    activity_type: str
-    attempt_id: str
+    activity_id: str | None = None
+    activity_title: str | None = None
+    activity_type: str | None = None
+    attempt_id: str | None = None
+    project_id: str | None = None
+    project_title: str | None = None
+    submission_id: str | None = None
     score: float
     passed: bool
     assessed_at: datetime

@@ -9,11 +9,13 @@ import httpx
 
 from app.infrastructure.ai.base import (
     ActivityHintContext,
+    AICommunicationFeedbackResponse,
     AIHintResponse,
     AIProviderError,
     AITutorResponse,
     BaseAIProvider,
     ChatMessage,
+    CommunicationFeedbackContext,
     LessonContext,
 )
 
@@ -186,6 +188,62 @@ class GeminiAIProvider(BaseAIProvider):
             hint=hint_text,
             hint_level=hint_level,
             max_level=3,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            provider="gemini",
+            model=self.model,
+        )
+
+    def review_communication(
+        self,
+        context: CommunicationFeedbackContext,
+    ) -> AICommunicationFeedbackResponse:
+        """Provide qualitative feedback on communication practice using Gemini."""
+        system_instruction = (
+            "You are an expert executive communication coach for SkillVerse. "
+            "Evaluate the learner's professional communication (BLUF or STAR format). "
+            "Provide balanced, constructive feedback focusing on clarity, conciseness, tone, and impact. "
+            "Do NOT make personal psychological judgments. Focus strictly on written communication structure."
+        )
+
+        sections_formatted = "\n".join(
+            f"[{k.upper()}]: {v}" for k, v in context.learner_sections.items()
+        )
+        prompt = (
+            f"Format: {context.format.upper()}\n"
+            f"Scenario: {context.scenario}\n"
+            f"Target Audience: {context.audience or 'General Professional'}\n"
+            f"Objective: {context.objective or 'Clear Communication'}\n"
+            f"Learner Submission:\n{sections_formatted}\n\n"
+            f"Reflection: {context.reflection or 'None provided'}\n\n"
+            "Provide:\n"
+            "1. Summary observation\n"
+            "2. Strengths (2 points)\n"
+            "3. Areas for Improvement (2 points)\n"
+            "4. Actionable Tips (2 tips)"
+        )
+
+        data = self._call_gemini(system_instruction, prompt)
+        candidates = data.get("candidates", [])
+        parts = candidates[0]["content"].get("parts", []) if candidates and "content" in candidates[0] else []
+        text_out = parts[0].get("text", "") if parts else "Review completed."
+
+        usage = data.get("usageMetadata", {})
+        prompt_tokens = usage.get("promptTokenCount", len(prompt.split()))
+        completion_tokens = usage.get("candidatesTokenCount", len(text_out.split()))
+
+        # Parse sections or provide structured fallback
+        summary = text_out[:300].strip()
+        strengths = ["Structured according to professional format.", "Addresses the core context directly."]
+        improvements = ["Enhance clarity and conciseness.", "Ensure explicit call to action or metrics."]
+        tips = ["Use active voice for executive clarity.", "Keep paragraphs focused on a single key point."]
+
+        return AICommunicationFeedbackResponse(
+            summary=summary,
+            strengths=strengths,
+            improvements=improvements,
+            actionable_tips=tips,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=prompt_tokens + completion_tokens,

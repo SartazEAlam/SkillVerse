@@ -171,6 +171,48 @@ export const ActivityContainer: React.FC<ActivityContainerProps> = ({
           return 'Please enter your code before submitting.'
         }
         break
+      case 'web_practice': {
+        const config = activity.configuration || {}
+        const requireRepo = config.require_repo_url !== false
+        const requireLive = Boolean(config.require_live_url)
+        const requireReflection = config.require_reflection !== false
+
+        if (requireRepo && (!submissionState.repo_url || !submissionState.repo_url.trim())) {
+          return 'Please provide a repository URL before submitting.'
+        }
+        if (requireLive && (!submissionState.live_url || !submissionState.live_url.trim())) {
+          return 'Please provide a live demonstration URL before submitting.'
+        }
+        if (requireReflection) {
+          const reflectionText = (submissionState.reflection || '').trim()
+          const words = reflectionText ? reflectionText.split(/\s+/).length : 0
+          if (words < 10) {
+            return 'Please provide a technical reflection of at least 10 words before submitting.'
+          }
+        }
+        break
+      }
+      case 'communication': {
+        const config = activity.configuration || {}
+        const format = config.format || 'bluf'
+        const sections = submissionState.sections || {}
+
+        if (format === 'bluf') {
+          const bottomLine = (sections.bottom_line || '').trim()
+          if (!bottomLine || bottomLine.split(/\s+/).length < 5) {
+            return 'Please provide a Bottom Line Up Front of at least 5 words before submitting.'
+          }
+        } else if (format === 'star') {
+          const reqSections = ['situation', 'task', 'action', 'result']
+          for (const s of reqSections) {
+            const val = (sections[s] || '').trim()
+            if (!val || val.split(/\s+/).length < 10) {
+              return `Please provide the ${s.toUpperCase()} section (at least 10 words) before submitting.`
+            }
+          }
+        }
+        break
+      }
       default:
         break
     }

@@ -18,6 +18,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
     if (location.pathname === '/') return { title: 'Learner Dashboard', crumb: 'Home' }
     if (location.pathname === '/explore') return { title: 'Explore Skills & Courses', crumb: 'Catalog' }
     if (location.pathname === '/skills') return { title: 'Interactive Skill Map', crumb: 'Taxonomy' }
+    if (location.pathname === '/projects') return { title: 'Practical Projects', crumb: 'Projects' }
+    if (location.pathname.startsWith('/projects/')) return { title: 'Project Details', crumb: 'Projects' }
+    if (location.pathname.startsWith('/submissions/')) return { title: 'Submission Workspace', crumb: 'Workspace' }
+    if (location.pathname === '/portfolio') return { title: 'Showcase Portfolio', crumb: 'Portfolio' }
+    if (location.pathname.startsWith('/u/') || (location.pathname.startsWith('/portfolio/') && location.pathname !== '/portfolio')) {
+      return { title: 'Public Showcase Portfolio', crumb: 'Showcase' }
+    }
     if (location.pathname === '/profile') return { title: 'Account Settings', crumb: 'Profile' }
     if (location.pathname === '/login') return { title: 'Sign In', crumb: 'Auth' }
     if (location.pathname === '/register') return { title: 'Create Account', crumb: 'Auth' }

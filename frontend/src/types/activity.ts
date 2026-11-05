@@ -15,6 +15,8 @@ export type ActivityType =
   | 'matching'
   | 'code_exercise'
   | 'scenario'
+  | 'web_practice'
+  | 'communication'
 
 export type AttemptStatus = 'in_progress' | 'submitted' | 'graded' | 'review_required'
 export type GradingType = 'exact' | 'partial' | 'pattern' | 'manual'
@@ -40,6 +42,42 @@ export interface ScenarioDecision {
   id: string
   title: string
   description: string
+}
+
+export interface MilestoneItem {
+  id: string
+  title: string
+  description?: string
+  required?: boolean
+}
+
+export interface WebPracticeConfig {
+  problem_statement?: string
+  learning_objectives?: string[]
+  milestones?: MilestoneItem[]
+  require_repo_url?: boolean
+  require_live_url?: boolean
+  require_reflection?: boolean
+  rubric_criteria?: string[]
+}
+
+export interface CommunicationSectionItem {
+  id: string
+  title: string
+  prompt: string
+  min_words?: number
+  max_words?: number
+}
+
+export interface CommunicationConfig {
+  format: 'bluf' | 'star'
+  scenario: string
+  audience?: string
+  objective?: string
+  rubric_criteria?: string[]
+  min_words?: number
+  max_words?: number
+  sections?: CommunicationSectionItem[]
 }
 
 export interface ActivityDetail {
@@ -110,6 +148,21 @@ export interface CodingSubmission {
   language?: string
 }
 
+export interface WebPracticeSubmission {
+  repo_url?: string
+  live_url?: string
+  implementation_notes?: string
+  completed_milestone_ids: string[]
+  reflection?: string
+  reflection_answers?: Record<string, string>
+}
+
+export interface CommunicationSubmission {
+  format: 'bluf' | 'star'
+  sections: Record<string, string>
+  reflection?: string
+}
+
 export type ActivitySubmission =
   | SingleChoiceSubmission
   | MultipleSelectSubmission
@@ -120,6 +173,8 @@ export type ActivitySubmission =
   | MatchingSubmission
   | ScenarioSubmission
   | CodingSubmission
+  | WebPracticeSubmission
+  | CommunicationSubmission
   | Record<string, unknown>
 
 // ── Attempt & Grading Feedback Responses ────────────────────────────────────

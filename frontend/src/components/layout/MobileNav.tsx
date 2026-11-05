@@ -8,6 +8,8 @@ import {
   Sparkles,
   BookOpen,
   FolderGit2,
+  Briefcase,
+  Award,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { IconButton } from '../ui/IconButton'
@@ -44,6 +46,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ isOpen, onClose }) => {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/explore', label: 'Explore Courses', icon: Compass },
     { to: '/skills', label: 'Skill Map', icon: Network },
+    { to: '/projects', label: 'Projects', icon: Briefcase },
+    ...(user ? [{ to: '/portfolio', label: 'Portfolio', icon: Award }] : []),
     ...(isCreatorOrAdmin
       ? [{ to: '/creator', label: 'Creator Studio', icon: FolderGit2 }]
       : []),

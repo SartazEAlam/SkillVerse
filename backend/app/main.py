@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         import app.modules.auth.models
         import app.modules.courses.models
         import app.modules.progress.models
+        import app.modules.projects.models
         import app.modules.skills.models  # noqa: F401
         from app.infrastructure.database import Base, engine
 
@@ -148,10 +149,23 @@ def create_app() -> FastAPI:
         """System liveness and dependency readiness check."""
         db_ok = check_database_connection()
 
+        # Check artifact storage health accurately based on configured provider
+        storage_status = "not_configured"
+        if settings.storage_provider == "local":
+            try:
+                from pathlib import Path
+                storage_root = Path(settings.storage_local_root).resolve()
+                storage_root.mkdir(parents=True, exist_ok=True)
+                storage_status = f"local:{settings.storage_local_root}"
+            except Exception:
+                storage_status = "error"
+        elif settings.storage_provider == "s3":
+            storage_status = "s3:pending_configuration"
+
         services: dict[str, str] = {
             "database": "connected" if db_ok else "disconnected",
             "redis": "not_configured",  # Redis check will be added when integrated
-            "storage": "not_configured",  # Object storage check will be added when integrated
+            "storage": storage_status,
         }
 
         all_critical_ok = db_ok
@@ -172,6 +186,7 @@ def create_app() -> FastAPI:
     from app.modules.auth.router import router as auth_router
     from app.modules.courses.router import router as courses_router
     from app.modules.progress.router import router as progress_router
+    from app.modules.projects.router import router as projects_router
     from app.modules.skills.router import router as skills_router
     from app.modules.users.router import router as users_router
 
@@ -182,6 +197,7 @@ def create_app() -> FastAPI:
     app.include_router(activities_router, prefix="/api/v1")
     app.include_router(progress_router, prefix="/api/v1")
     app.include_router(ai_router, prefix="/api/v1")
+    app.include_router(projects_router, prefix="/api/v1")
 
     return app
 

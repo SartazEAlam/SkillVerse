@@ -11,6 +11,11 @@ import { NotFoundPage } from '../pages/NotFoundPage'
 import { LessonWorkspacePage } from '../pages/LessonWorkspacePage'
 import { CreatorStudioPage } from '../pages/CreatorStudioPage'
 import { CourseEditorPage } from '../pages/CourseEditorPage'
+import { ProjectsPage } from '../pages/ProjectsPage'
+import { ProjectDetailPage } from '../pages/ProjectDetailPage'
+import { SubmissionWorkspacePage } from '../pages/SubmissionWorkspacePage'
+import { PortfolioManagementPage } from '../pages/PortfolioManagementPage'
+import { PublicPortfolioPage } from '../pages/PublicPortfolioPage'
 
 export const router = createBrowserRouter([
   {
@@ -56,6 +61,30 @@ export const router = createBrowserRouter([
       {
         path: 'skills',
         element: <SkillsPage />,
+      },
+      {
+        path: 'projects',
+        element: <ProjectsPage />,
+      },
+      {
+        path: 'projects/:slugOrId',
+        element: <ProjectDetailPage />,
+      },
+      {
+        path: 'submissions/:submissionId',
+        element: <SubmissionWorkspacePage />,
+      },
+      {
+        path: 'portfolio',
+        element: <PortfolioManagementPage />,
+      },
+      {
+        path: 'portfolio/:slugOrId',
+        element: <PublicPortfolioPage />,
+      },
+      {
+        path: 'u/:slugOrId/portfolio',
+        element: <PublicPortfolioPage />,
       },
       {
         path: 'creator',

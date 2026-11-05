@@ -16,6 +16,7 @@ from app.infrastructure.ai.base import (
     AIProviderError,
     BaseAIProvider,
     ChatMessage,
+    CommunicationFeedbackContext,
     LessonContext,
 )
 from app.infrastructure.ai.factory import get_ai_provider
@@ -25,6 +26,8 @@ from app.modules.ai.schemas import (
     ActivityHintResponse,
     AIStatusResponse,
     ChatMessageTurn,
+    CommunicationFeedbackRequest,
+    CommunicationFeedbackResponse,
     TutorChatResponse,
 )
 from app.modules.auth.models import User, UserProfile
@@ -285,6 +288,82 @@ class AIService:
                 user_id=user.id,
                 interaction_type="activity_hint",
                 lesson_id=lesson_id or activity.lesson_id,
+                activity_id=activity.id,
+                provider="unknown",
+                model="unknown",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                latency_ms=latency_ms,
+                status_str="error",
+                error_code=ape.code,
+            )
+            raise HTTPException(
+                status_code=ape.status_code,
+                detail={"error": {"code": ape.code, "message": ape.message}},
+            )
+
+    def review_communication(
+        self,
+        user: User,
+        request: CommunicationFeedbackRequest,
+    ) -> CommunicationFeedbackResponse:
+        """Provide qualitative feedback on professional communication (BLUF or STAR)."""
+        self._check_opt_out(user)
+
+        activity = self.db.get(Activity, request.activity_id)
+        if not activity:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": {"code": "ACTIVITY_NOT_FOUND", "message": "Activity not found."}},
+            )
+
+        cfg = activity.configuration if isinstance(activity.configuration, dict) else {}
+        comm_ctx = CommunicationFeedbackContext(
+            format=str(cfg.get("format", "bluf")).lower(),
+            title=activity.title,
+            scenario=str(cfg.get("scenario") or activity.instructions or ""),
+            audience=cfg.get("audience"),
+            objective=cfg.get("objective"),
+            competency=cfg.get("competency"),
+            learner_sections=request.sections,
+            reflection=request.reflection,
+        )
+
+        t0 = time.perf_counter()
+        try:
+            resp = self.provider.review_communication(comm_ctx)
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+
+            self._log_interaction(
+                user_id=user.id,
+                interaction_type="communication_feedback",
+                lesson_id=activity.lesson_id,
+                activity_id=activity.id,
+                provider=resp.provider,
+                model=resp.model,
+                prompt_tokens=resp.prompt_tokens,
+                completion_tokens=resp.completion_tokens,
+                total_tokens=resp.total_tokens,
+                latency_ms=latency_ms,
+                status_str="success",
+            )
+
+            return CommunicationFeedbackResponse(
+                summary=resp.summary,
+                strengths=resp.strengths,
+                improvements=resp.improvements,
+                actionable_tips=resp.actionable_tips,
+                provider=resp.provider,
+                model=resp.model,
+                tokens_used=resp.total_tokens,
+            )
+        except AIProviderError as ape:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            self._log_interaction(
+                user_id=user.id,
+                interaction_type="communication_feedback",
+                lesson_id=activity.lesson_id,
                 activity_id=activity.id,
                 provider="unknown",
                 model="unknown",

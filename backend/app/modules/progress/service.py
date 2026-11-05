@@ -522,10 +522,13 @@ class ProgressionService:
                         )
                         evidence_items.append(
                             SkillEvidenceItem(
-                                activity_id=item["activity_id"],
-                                activity_title=item.get("activity_title", "Assessment"),
-                                activity_type=item.get("activity_type", "interactive"),
-                                attempt_id=item["attempt_id"],
+                                activity_id=item.get("activity_id"),
+                                activity_title=item.get("activity_title"),
+                                activity_type=item.get("activity_type"),
+                                attempt_id=item.get("attempt_id"),
+                                project_id=item.get("project_id"),
+                                project_title=item.get("project_title"),
+                                submission_id=item.get("submission_id"),
                                 score=float(item.get("score", 0.0)),
                                 passed=bool(item.get("passed", False)),
                                 assessed_at=assessed_dt,
@@ -669,7 +672,7 @@ class ProgressionService:
             )
             .order_by(Attempt.completed_at.desc())
         )
-        raw_attempt_records = self.db.execute(stmt).all()
+        raw_attempt_records = self.db.execute(stmt).all() if course_ids else []
 
         # Filter strictly for attempts assessing this specific skill
         attempt_records: list[tuple[Attempt, Activity]] = []
@@ -680,15 +683,20 @@ class ProgressionService:
 
         # Check enrollment in courses teaching this skill
         is_enrolled = (
-            self.db.scalar(
-                select(func.count(Enrollment.id)).where(
-                    Enrollment.user_id == user_id, Enrollment.course_id.in_(course_ids)
+            (
+                self.db.scalar(
+                    select(func.count(Enrollment.id)).where(
+                        Enrollment.user_id == user_id, Enrollment.course_id.in_(course_ids)
+                    )
                 )
+                or 0
             )
-            or 0
-        ) > 0
+            > 0
+            if course_ids
+            else False
+        )
 
-        # Formulate verifiable evidence
+        # Formulate verifiable evidence from course activities
         distinct_passed_activities: dict[str, tuple[Attempt, Activity]] = {}
         for att, act in attempt_records:
             if att.passed and att.score is not None:
@@ -699,6 +707,47 @@ class ProgressionService:
                     prev_att, _ = distinct_passed_activities[act.id]
                     if (att.score or 0) > (prev_att.score or 0):
                         distinct_passed_activities[act.id] = (att, act)
+
+        # Find project submissions demonstrating this skill
+        from app.modules.projects.models import (
+            Project,
+            ProjectSkill,
+            ProjectSubmission,
+            SubmissionStatus,
+        )
+
+        project_sub_stmt = (
+            select(ProjectSubmission, Project)
+            .join(Project, ProjectSubmission.project_id == Project.id)
+            .join(ProjectSkill, ProjectSkill.project_id == Project.id)
+            .where(
+                ProjectSkill.skill_id == skill_id,
+                ProjectSubmission.user_id == user_id,
+            )
+            .order_by(ProjectSubmission.created_at.desc())
+        )
+        project_sub_records = self.db.execute(project_sub_stmt).all()
+        total_project_attempts = len(project_sub_records)
+
+        distinct_passed_projects: dict[str, tuple[ProjectSubmission, Project]] = {}
+        for sub, proj in project_sub_records:
+            if (
+                sub.status == SubmissionStatus.COMPLETED.value
+                and sub.passed
+                and sub.score is not None
+            ):
+                if sub.project_id not in distinct_passed_projects:
+                    distinct_passed_projects[sub.project_id] = (sub, proj)
+                else:
+                    # Deduplicate revisions by project_id (retaining highest score, tiebreak by timestamp)
+                    prev_sub, _ = distinct_passed_projects[sub.project_id]
+                    if (sub.score or 0.0) > (prev_sub.score or 0.0):
+                        distinct_passed_projects[sub.project_id] = (sub, proj)
+                    elif (sub.score or 0.0) == (prev_sub.score or 0.0):
+                        s_time = sub.evaluated_at or sub.created_at
+                        p_time = prev_sub.evaluated_at or prev_sub.created_at
+                        if s_time and p_time and s_time > p_time:
+                            distinct_passed_projects[sub.project_id] = (sub, proj)
 
         evidence_payload: list[dict[str, Any]] = []
         for _act_id, (att, act) in distinct_passed_activities.items():
@@ -713,19 +762,35 @@ class ProgressionService:
                 "rule": "independent_assessment_passed",
             })
 
-        # Calculate mastery level & tier
-        passed_count = len(distinct_passed_activities)
-        total_attempts = len(attempt_records)
+        for _proj_id, (sub, proj) in distinct_passed_projects.items():
+            evidence_payload.append({
+                "project_id": proj.id,
+                "project_title": proj.title,
+                "submission_id": sub.id,
+                "score": sub.score,
+                "passed": sub.passed,
+                "assessed_at": (sub.evaluated_at or sub.updated_at or datetime.now(UTC)).isoformat(),
+                "rule": "capstone_project_completed",
+            })
+
+        # Calculate mastery level & tier across qualifying tasks
+        all_passed_scores: list[float] = [
+            float(att.score) for att, _ in distinct_passed_activities.values() if att.score is not None
+        ] + [
+            float(sub.score) for sub, _ in distinct_passed_projects.values() if sub.score is not None
+        ]
+
+        passed_count = len(all_passed_scores)
+        total_attempts = len(attempt_records) + total_project_attempts
 
         now = datetime.now(UTC)
         if passed_count >= 2:
-            # Evaluated across sufficiently distinct tasks
-            avg_score = sum(att.score for att, _ in distinct_passed_activities.values()) / passed_count
+            # Evaluated across sufficiently distinct tasks (activities and/or projects)
+            avg_score = sum(all_passed_scores) / passed_count
             mastery_level = round(min(100.0, avg_score), 1)
             status = SkillMasteryStatus.MASTERED.value if avg_score >= 80.0 else SkillMasteryStatus.PROVISIONAL.value
         elif passed_count == 1:
-            att, _ = next(iter(distinct_passed_activities.values()))
-            mastery_level = round(float(att.score or 70.0), 1)
+            mastery_level = round(float(all_passed_scores[0]), 1)
             status = SkillMasteryStatus.PROVISIONAL.value
         elif total_attempts > 0:
             mastery_level = 30.0

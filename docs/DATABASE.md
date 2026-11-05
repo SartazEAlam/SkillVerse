@@ -373,14 +373,37 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 | id | UUID | PK | Submission identifier |
 | project_id | UUID | FK → projects.id, NOT NULL | Target project |
 | user_id | UUID | FK → users.id, NOT NULL | Submitting learner |
-| content | JSONB | NOT NULL | Submission content/files references |
-| status | ENUM('draft','submitted','evaluated','published') | NOT NULL, DEFAULT 'draft' | |
-| evaluation | JSONB | NULLABLE | Evaluation results and feedback |
-| score | DECIMAL(5,2) | NULLABLE | Score if applicable |
-| submitted_at | TIMESTAMPTZ | NULLABLE | |
-| evaluated_at | TIMESTAMPTZ | NULLABLE | |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| version_number | INTEGER | NOT NULL, DEFAULT 1 | Sequential version number for this submission |
+| revision_of_id | UUID | FK → project_submissions.id, NULLABLE | Optional link to prior revision being updated |
+| status | ENUM('DRAFT','SUBMITTED','UNDER_REVIEW','CHANGES_REQUESTED','EVALUATED','COMPLETED') | NOT NULL, DEFAULT 'DRAFT' | Lifecycle state |
+| title | VARCHAR(300) | NULLABLE | Submission title |
+| summary | TEXT | NULLABLE | Learner reflection / description |
+| content | JSONB | NOT NULL | Deliverables (repo URL, live demo, answers) |
+| milestones_completed | JSONB | NOT NULL, DEFAULT '[]' | List of completed milestone IDs |
+| evaluation | JSONB | NULLABLE | Evaluation results, rubric scores, and feedback |
+| score | FLOAT | NULLABLE | Overall score if evaluated |
+| passed | BOOLEAN | NULLABLE | Whether submission passed evaluation |
+| submitted_at | TIMESTAMPTZ | NULLABLE | Final submission timestamp |
+| evaluated_at | TIMESTAMPTZ | NULLABLE | Evaluation timestamp |
+| evaluator_id | UUID | FK → users.id, NULLABLE | Reviewing creator or admin |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+| | | UNIQUE(user_id, project_id, version_number) | Unique submission per version |
+
+#### `project_artifacts`
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| id | UUID | PK | Artifact identifier |
+| submission_id | UUID | FK → project_submissions.id, NOT NULL, ON DELETE CASCADE | Owning submission |
+| user_id | UUID | FK → users.id, NOT NULL, ON DELETE RESTRICT | Uploading user |
+| storage_key | VARCHAR(500) | UNIQUE, NOT NULL, INDEX | Server-generated storage key |
+| original_filename | VARCHAR(255) | NOT NULL | Cleaned display filename |
+| mime_type | VARCHAR(100) | NOT NULL | MIME content type |
+| file_size_bytes | INTEGER | NOT NULL | Size in bytes |
+| checksum_sha256 | VARCHAR(64) | NOT NULL | SHA-256 integrity checksum |
+| is_public | BOOLEAN | NOT NULL, DEFAULT false | Whether artifact is publicly accessible |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Upload timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
 #### `portfolios`
 | Column | Type | Constraints | Description |

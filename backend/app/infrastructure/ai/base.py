@@ -61,6 +61,33 @@ class AIHintResponse(BaseModel):
     model: str
 
 
+class CommunicationFeedbackContext(BaseModel):
+    """Grounded context for qualitative AI writing and communication review."""
+
+    format: str = "bluf"  # "bluf" or "star"
+    title: str
+    scenario: str
+    audience: str | None = None
+    objective: str | None = None
+    competency: str | None = None
+    learner_sections: dict[str, str] = Field(default_factory=dict)
+    reflection: str | None = None
+
+
+class AICommunicationFeedbackResponse(BaseModel):
+    """Constructive, qualitative feedback for professional communication exercises."""
+
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    actionable_tips: list[str] = Field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    provider: str
+    model: str
+
+
 class AIProviderError(Exception):
     """Raised when an AI provider encounter an operational or timeout error."""
 
@@ -90,3 +117,10 @@ class BaseAIProvider(ABC):
         hint_level: int,
     ) -> AIHintResponse:
         """Generate a progressive hint for an interactive assessment."""
+
+    @abstractmethod
+    def review_communication(
+        self,
+        context: CommunicationFeedbackContext,
+    ) -> AICommunicationFeedbackResponse:
+        """Provide qualitative feedback on professional communication (BLUF or STAR)."""

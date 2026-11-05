@@ -41,6 +41,8 @@ class ActivityType(enum.StrEnum):
     MATCHING = "matching"
     CODE_EXERCISE = "code_exercise"
     SCENARIO = "scenario"
+    WEB_PRACTICE = "web_practice"
+    COMMUNICATION = "communication"
 
 
 class GradingType(enum.StrEnum):

@@ -49,6 +49,78 @@ class CodingTestCasePublic(BaseModel):
     is_public: bool = True
 
 
+class MilestoneItem(BaseModel):
+    """Required or optional milestone for practical web development exercises."""
+
+    id: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=2000)
+    required: bool = True
+
+
+class WebPracticeConfig(BaseModel):
+    """Structured configuration for web development practice activities."""
+
+    problem_statement: str = Field(min_length=1)
+    learning_objectives: list[str] = Field(default_factory=list)
+    milestones: list[MilestoneItem] = Field(default_factory=list)
+    expected_deliverables: list[str] = Field(default_factory=list)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    starter_resources: list[dict[str, str]] = Field(default_factory=list)
+    estimated_duration_minutes: int | None = Field(default=None, ge=1)
+    reflection_prompts: list[str] = Field(default_factory=list)
+    require_repo_url: bool = True
+    require_live_url: bool = False
+    require_reflection: bool = True
+
+
+class WebPracticeSubmission(BaseModel):
+    """Learner submission payload for web development practice."""
+
+    repo_url: str | None = Field(default=None, max_length=500)
+    live_url: str | None = Field(default=None, max_length=500)
+    implementation_notes: str | None = Field(default=None, max_length=10000)
+    completed_milestone_ids: list[str] = Field(default_factory=list)
+    reflection_answers: dict[str, str] = Field(default_factory=dict)
+
+
+class CommunicationSection(BaseModel):
+    """Section specification for structured communication activities (BLUF or STAR)."""
+
+    id: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=200)
+    prompt: str = Field(min_length=1, max_length=2000)
+    guidance: str | None = Field(default=None, max_length=1000)
+    min_words: int | None = Field(default=None, ge=1)
+    max_words: int | None = Field(default=None, ge=1)
+    required: bool = True
+
+
+class CommunicationConfig(BaseModel):
+    """Configuration for BLUF writing or STAR interview communication practice."""
+
+    format: str = Field(default="bluf", pattern="^(bluf|star)$")
+    scenario: str = Field(min_length=1)
+    audience: str | None = Field(default=None, max_length=300)
+    objective: str | None = Field(default=None, max_length=500)
+    competency: str | None = Field(default=None, max_length=200)
+    sections: list[CommunicationSection] = Field(default_factory=list)
+    min_total_words: int | None = Field(default=None, ge=1)
+    max_total_words: int | None = Field(default=None, ge=1)
+    reflection_prompt: str | None = Field(default=None, max_length=1000)
+
+
+class CommunicationSubmission(BaseModel):
+    """Learner submission payload for BLUF writing or STAR interview."""
+
+    format: str = Field(default="bluf", pattern="^(bluf|star)$")
+    sections: dict[str, str] = Field(
+        default_factory=dict,
+        description="Keyed by section ID (e.g. bottom_line, context_details, next_steps or situation, task, action, result)",
+    )
+    reflection: str | None = Field(default=None, max_length=5000)
+
+
 # ── Authoring / Internal Activity Creation Schema ───────────────────────────
 
 

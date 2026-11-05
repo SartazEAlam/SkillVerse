@@ -914,7 +914,7 @@ Retrieve details of a specific attempt.
 Author a new interactive activity along with its confidential grading configuration.
 - **Answer Key Protection:** The `answer_key` is persisted securely to `grading_configs` and omitted from the returned `ActivityDetailResponse`.
 - **Course Ownership Verification:** Verifies that the authenticated creator owns the course draft containing the target lesson (or is an admin).
-- Supports all 9 activity types (`single_choice`, `multiple_select`, `true_false`, `short_answer`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario`).
+- Supports all 11 activity types (`single_choice`, `multiple_select`, `true_false`, `short_answer`, `fill_in_the_blank`, `ordering`, `matching`, `code_exercise`, `scenario`, `web_practice`, `communication`).
 
 ### `GET /api/v1/activities/{activity_id}/authoring` 🔓🛡️ (creator/admin)
 Retrieve the complete activity authoring definition, including confidential `answer_key`, `rubric`, `test_cases`, and `feedback_config`.
@@ -954,6 +954,48 @@ Update activity definition, configuration, passing score, max attempts, associat
 
 ### `DELETE /api/v1/activities/{activity_id}` 🔓🛡️ (creator/admin)
 Delete an activity from a draft lesson. Also cleans up its associated grading configuration and learner attempts. Only course owner or admin can delete. Returns 204 No Content.
+
+### Specialized Practice Activities & Simulation Upgrades (Phase 9 Stage 4)
+
+#### 1. Web Development Practice (`web_practice`)
+Interactive hands-on practice for web development without arbitrary code execution.
+- **Configuration Schema:**
+  - `problem_statement` (string, optional): Architectural brief and problem requirements.
+  - `learning_objectives` (string[], optional): Core concepts and skills practiced.
+  - `milestones` (MilestoneItem[], optional): Checklist of milestones (`id`, `title`, `description`, `required`).
+  - `require_repo_url` (boolean, default `true`): Whether a repository URL is required.
+  - `require_live_url` (boolean, default `false`): Whether a live demonstration URL is required.
+  - `require_reflection` (boolean, default `true`): Whether technical reflection is required (minimum 10 words).
+- **Submission Schema:**
+  - `repo_url` (string, optional): Safe HTTP/HTTPS repository URL.
+  - `live_url` (string, optional): Safe HTTP/HTTPS live demonstration URL.
+  - `implementation_notes` (string, optional): Notes on architecture, libraries, or responsive design choices.
+  - `completed_milestone_ids` (string[]): List of milestone IDs marked as completed.
+  - `reflection` (string, optional): Technical reflection text (minimum 10 words if required).
+- **Security & Evaluation Policy:**
+  - Strict URL regex and domain validation (`SAFE_URL_REGEX`). Schemes like `javascript:`, `file:`, `data:` are blocked.
+  - Server-authoritative deterministic grading evaluates milestone completion and reflection depth.
+  - External code repositories and live URLs are never automatically fetched or executed in host environments.
+
+#### 2. Professional Communication Practice (`communication`)
+Structured workplace communication practice using executive frameworks.
+- **Configuration Schema:**
+  - `format` (enum: `"bluf"` | `"star"`): Communication framework.
+  - `scenario` (string): Workplace challenge or operational incident description.
+  - `audience` (string, optional): Target stakeholder group (e.g., "VP Infrastructure", "Engineering Team").
+  - `objective` (string, optional): Core communication goal (e.g., "Rollback sign-off", "Resource allocation").
+  - `sections` (CommunicationSection[], optional): Custom prompt overrides per section.
+- **Submission Schema:**
+  - `format` (`"bluf"` | `"star"`): Framework used.
+  - `sections` (Record<string, string>):
+    - For BLUF: `bottom_line` (min 5 words), `context_details`, `next_steps`.
+    - For STAR: `situation` (min 10 words), `task` (min 10 words), `action` (min 10 words), `result` (min 10 words).
+  - `reflection` (string, optional): Learner reflection on framing choices.
+- **Evaluation:** Server-authoritative deterministic structural grading. Optional qualitative AI writing review available via `/api/v1/ai/communication-feedback`.
+
+#### 3. Accessible Personal Productivity Simulation Upgrades
+- `ordering`: Grader supports both single `correct_order` (`list[str]`) and multiple acceptable permutations via `acceptable_orders` (`list[list[str]]`). Frontend includes keyboard handlers (`ArrowUp`/`ArrowDown`/`Home`/`End`) and `aria-live` announcements.
+- `matching`: Grader supports both single pairs (`pairs`) and multi-target valid pairings via `acceptable_pairs` (`dict[str, list[str]]`). Frontend includes accessible dropdown selectors with real-time matched counter and ARIA live status announcements.
 
 ---
 
@@ -1325,9 +1367,360 @@ Update AI tutoring opt-out preference for the authenticated user.
 }
 ```
 
+### `POST /api/v1/ai/communication-feedback` 🔓
+Request formative qualitative AI review on a structured communication practice exercise (BLUF or STAR format).
+- Grounded strictly in the activity scenario, audience, objective, and learner's drafted sections.
+- Answer keys and grading secrets are stripped before AI context generation.
+- Enforces user `ai_opt_out` preference (returns 403 `AI_FEATURE_OPTED_OUT` if opted out).
+- Rate limited (10 requests / hour per user).
+- Audited via `ai_interactions` telemetry logging with `interaction_type = "communication_feedback"`.
+
+```json
+// Request
+{
+  "activity_id": "uuid",
+  "sections": {
+    "bottom_line": "Requesting immediate failover to backup gateway.",
+    "context_details": "Primary provider returning 504 Gateway Timeout on 45% of traffic.",
+    "next_steps": "Failover takes 90 seconds once approved."
+  },
+  "reflection": "Direct framing avoids delaying critical infrastructure rollback."
+}
+
+// Response 200 OK
+{
+  "summary": "Clear, decisive BLUF communication appropriate for executive decision-makers.",
+  "strengths": [
+    "Immediate, unambiguous recommendation in opening line.",
+    "Quantified error rate supports urgency."
+  ],
+  "improvements": [
+    "Clarify who conducts verification post-failover."
+  ],
+  "actionable_tips": [
+    "Include a specific rollback contingency deadline."
+  ],
+  "section_feedback": {
+    "bottom_line": "Strong direct opening.",
+    "next_steps": "Actionable and concise."
+  },
+  "provider": "mock"
+}
+```
+
 ---
 
-## Request Validation Rules
+## Projects, Submissions & Artifacts (Phase 9)
+
+Practical projects, learner submissions lifecycle, evaluator grading, and deliverable artifact storage.
+
+### `GET /api/v1/projects` 🌐
+Browse catalog projects with pagination, sorting, and discipline/skill filters.
+- **Query Parameters:**
+  - `page` (default 1)
+  - `page_size` (default 20, max 100)
+  - `discipline_id` (optional UUID)
+  - `skill_id` (optional UUID)
+  - `difficulty_level` (optional: BEGINNER, INTERMEDIATE, ADVANCED, EXPERT)
+  - `search` (optional keyword matching title and short_description)
+  - `sort_by` (`created_at`, `title`, `difficulty_level`)
+  - `sort_order` (`asc`, `desc`)
+  - `status` (DRAFT, PUBLISHED, ARCHIVED; creators and admins only)
+- Non-elevated learners see only `PUBLISHED` projects.
+
+```json
+// Response 200 OK
+{
+  "items": [
+    {
+      "id": "uuid",
+      "slug": "cloud-inventory-service",
+      "title": "Cloud Inventory Service",
+      "short_description": "Build a scalable cloud inventory API service.",
+      "discipline_id": "uuid",
+      "discipline_name": "Technology",
+      "discipline_slug": "technology",
+      "difficulty_level": "INTERMEDIATE",
+      "estimated_duration_hours": 15,
+      "status": "PUBLISHED",
+      "creator_id": "uuid",
+      "created_at": "2026-11-01T17:00:00Z",
+      "updated_at": "2026-11-01T17:00:00Z",
+      "skills": [
+        {
+          "skill_id": "uuid",
+          "skill_slug": "fastapi-core",
+          "skill_name": "FastAPI Development",
+          "difficulty_level": "INTERMEDIATE",
+          "is_primary": true
+        }
+      ],
+      "submissions_count": 12
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 20,
+  "pages": 1
+}
+```
+
+### `GET /api/v1/projects/{project_id_or_slug}` 🌐
+Retrieve full project specification, rubric, starter resources, and learner's latest submission status.
+- DRAFT and ARCHIVED projects are only visible to the project creator and administrators.
+
+```json
+// Response 200 OK
+{
+  "id": "uuid",
+  "slug": "cloud-inventory-service",
+  "title": "Cloud Inventory Service",
+  "short_description": "Build a scalable cloud inventory API service.",
+  "full_description": "Comprehensive capstone project requiring database migrations and secure endpoints.",
+  "discipline_id": "uuid",
+  "discipline_name": "Technology",
+  "difficulty_level": "INTERMEDIATE",
+  "estimated_duration_hours": 15,
+  "requirements": {
+    "milestones": [
+      { "id": "m1", "title": "Schema Design", "description": "Model items" }
+    ],
+    "deliverables": ["GitHub repository link"]
+  },
+  "evaluation_criteria": {
+    "passing_score": 75.0,
+    "rubric": [
+      { "id": "c1", "title": "Database Schema", "max_score": 40.0, "weight": 1.0 }
+    ]
+  },
+  "starter_resources": [
+    { "title": "Starter Repo", "url": "https://github.com/example/inventory-starter" }
+  ],
+  "status": "PUBLISHED",
+  "creator_id": "uuid",
+  "creator_name": "Creator Name",
+  "skills": [...],
+  "submissions_count": 12,
+  "my_submission": {
+    "id": "uuid",
+    "project_id": "uuid",
+    "version_number": 1,
+    "status": "DRAFT"
+  }
+}
+```
+
+### `POST /api/v1/projects` 🔓🛡️
+Author a new project draft (Creators and Admins only).
+- **Body:** `title`, `slug` (optional), `short_description`, `full_description`, `discipline_id`, `difficulty_level`, `estimated_duration_hours`, `requirements`, `evaluation_criteria`, `starter_resources`, `skills` (list of `{skill_id, is_primary}`).
+- **Response 201 Created:** Full project representation in `DRAFT` status.
+
+### `PATCH /api/v1/projects/{project_id}` 🔓🛡️
+Update project specification, rubric, requirements, or associated skills (Creator of project or Admin only).
+- **Response 200 OK:** Updated project representation.
+
+### `POST /api/v1/projects/{project_id}/publish` 🔓🛡️
+Validate project completeness and transition from `DRAFT` to `PUBLISHED` (Creator of project or Admin only).
+- Validates minimum title, descriptions, at least one milestone/deliverable, at least one rubric criterion, and a positive passing score.
+- **Response 200 OK:** Published project representation.
+
+### `POST /api/v1/projects/{project_id}/archive` 🔓🛡️
+Decommission and archive a project (Creator of project or Admin only).
+- **Response 200 OK:** Archived project representation.
+
+### `POST /api/v1/projects/{project_id}/submissions` 🔓
+Start working on a project or return an existing active draft without duplication.
+- Returns existing `DRAFT` if learner already has one.
+- Rejects if an active submission is already awaiting review (`SUBMITTED` or `UNDER_REVIEW`).
+- If changes were requested on the previous version, directs to the revision endpoint.
+- **Response 201 Created** (or 200 OK for existing draft).
+
+### `GET /api/v1/submissions/mine` 🔓
+List all submissions authored by the authenticated learner across all projects or filtered by `?project_id=`.
+- **Response 200 OK:** Array of `SubmissionSummaryResponse`.
+
+### `GET /api/v1/submissions/{submission_id}` 🔓
+Fetch complete submission details, content, milestone checklist, artifacts, evaluation rubric breakdown, and lifecycle audit history.
+- Authorized for: submission owner, project creator, assigned evaluator, or admin.
+- Includes `transition_history`: Array of lifecycle transition events (`from_status`, `to_status`, `timestamp`, `triggered_by`, `reason`).
+- **Response 200 OK:** Detailed submission representation (`SubmissionDetailResponse`).
+
+### `PATCH /api/v1/submissions/{submission_id}` 🔓
+Update title, summary, deliverables (content), and completed milestones on an in-progress draft submission.
+- Permitted strictly while status is `DRAFT`.
+- **Response 200 OK:** Updated submission representation.
+
+### `POST /api/v1/submissions/{submission_id}/submit` 🔓
+Submit deliverables for evaluation, transitioning from `DRAFT` to `SUBMITTED`.
+- Validates that deliverables, summary, or artifacts are attached.
+- Records `submitted_at` timestamp and appends transition event to `transition_history`.
+- **Response 200 OK:** Submitted submission representation.
+
+### `POST /api/v1/submissions/{submission_id}/revisions` 🔓
+Initiate an immutable revision draft from a submission with `CHANGES_REQUESTED` status.
+- Must belong to the authenticated learner.
+- Source submission remains permanently immutable with status `CHANGES_REQUESTED`.
+- Increments `version_number` and links `revision_of_id`.
+- Revisions never cross user or project boundaries.
+- **Response 201 Created:** New draft revision.
+
+### `GET /api/v1/submissions/{submission_id}/history` 🔓
+Retrieve all chronological versions in the revision chain for this learner and project.
+- **Response 200 OK:** Chronological list of submission versions.
+
+### `POST /api/v1/submissions/{submission_id}/review` 🔓🛡️
+Claim a submitted project for evaluation (Creators and Admins only).
+- Enforces evaluator role.
+- Prevents self-evaluation (`evaluator_id != user_id`).
+- Transitions status to `UNDER_REVIEW` and records `evaluator_id` and transition event.
+- **Response 200 OK:** `{ "submission_id": "...", "status": "UNDER_REVIEW", "evaluator_id": "...", "claimed_at": "..." }`.
+
+### `POST /api/v1/submissions/{submission_id}/evaluation` 🔓🛡️
+Grade submission against rubric criteria and assign pass/revision outcome (Creators and Admins only).
+- Enforces evaluator role and prohibits self-evaluation.
+- Calculates weighted rubric percentage score and compares against project `passing_score`.
+- Enforces the authoritative lifecycle:
+  1. Transitions and flushes status to intermediate `EVALUATED` state (`UNDER_REVIEW` → `EVALUATED`), persisting score and evaluation timestamp.
+  2. Evaluates outcome threshold: if `score >= passing_score` and `action != "REQUEST_CHANGES"`, transitions to `COMPLETED` (`EVALUATED` → `COMPLETED`), `passed = True`.
+  3. If `score < passing_score` or `action == "REQUEST_CHANGES"`, transitions to `CHANGES_REQUESTED` (`EVALUATED` → `CHANGES_REQUESTED`), `passed = False`.
+- Returns `EvaluationResponse` containing `submission_id`, `status`, `score`, `passed`, `evaluation` breakdown, and `transition_history`.
+- **Response 200 OK:** Detailed evaluation outcome and rubric score breakdown.
+
+### `POST /api/v1/submissions/{submission_id}/artifacts` 🔓
+Upload a deliverable artifact file (ZIP, PDF, image, text) to a draft submission.
+- **Limits:** 20 MB per file, 50 MB total aggregate per submission, maximum 10 artifacts per submission.
+- **Rate Limit:** 10 uploads/hour per user.
+- **Security:** Content type and magic bytes verification, executable extension blocklist, text file null-byte and binary header rejection, server-controlled storage prefix `submissions/{submission_id}`.
+- Concurrency protection via row locking (`with_for_update()`).
+- Atomic cleanup on database failure.
+- **Response 201 Created:** Artifact metadata and download link.
+
+### `GET /api/v1/submissions/{submission_id}/artifacts` 🔓
+List all artifacts attached to a submission.
+- Authorized for: owner, project creator, assigned evaluator, or admin.
+- **Response 200 OK:** Collection of artifacts and total aggregate size.
+
+### `DELETE /api/v1/artifacts/{artifact_id}` 🔓
+Delete an artifact from storage and database.
+- Permitted strictly by artifact owner while submission is in `DRAFT` status.
+- **Response 204 No Content**.
+
+### `GET /api/v1/artifacts/{artifact_id}/download` 🌐
+Download deliverable artifact with security verification and safe response headers.
+- **Download Authorization Rules:**
+  1. Artifact owner (learner).
+  2. Assigned submission evaluator.
+  3. Project creator or administrator.
+  4. Anonymous or third-party users ONLY IF all 5 public portfolio gates pass:
+     - Gate 1: Learner portfolio exists and `is_public == true`.
+     - Gate 2: Artifact has `is_public == true`.
+     - Gate 3: Submission has status `COMPLETED`.
+     - Gate 4: A portfolio item exists referencing this submission or artifact.
+     - Gate 5: That portfolio item has visibility `PUBLIC`.
+- **Security Headers:**
+  - `Content-Disposition: attachment; filename="<sanitized>"`
+  - `X-Content-Type-Options: nosniff`
+- **Response 200 OK:** Streaming binary response.
+
+---
+
+## Portfolios & Showcase (Phase 9)
+
+Learner portfolio management, customized showcase profiles, project submission curation, item reordering, and public showcase resolution.
+
+### `GET /api/v1/portfolios/me` 🔓
+Retrieve the authenticated learner's portfolio profile, custom slug, theme settings, visibility, and curated showcase items.
+- Automatically initializes a default private portfolio record on first request if none exists.
+- Includes private and draft items visible only to the owner.
+- **Response 200 OK:** `PortfolioDetailResponse`.
+
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "title": "Jane Doe's Portfolio",
+  "bio": "Full-stack cloud developer specializing in distributed systems.",
+  "slug": "jane-doe",
+  "theme": "MODERN",
+  "is_public": true,
+  "visibility": "PUBLIC",
+  "settings": { "visibility": "PUBLIC", "accent_color": "#4f46e5" },
+  "created_at": "2026-11-01T12:00:00Z",
+  "updated_at": "2026-11-02T10:00:00Z",
+  "items": [
+    {
+      "id": "uuid",
+      "portfolio_id": "uuid",
+      "item_type": "PROJECT_SUBMISSION",
+      "reference_id": "uuid",
+      "title": "Distributed Cloud Storage Engine",
+      "summary": "High-throughput object storage cluster with erasure coding.",
+      "sort_order": 0,
+      "is_featured": true,
+      "visibility": "PUBLIC",
+      "external_url": null,
+      "metadata": {
+        "score": 96.0,
+        "demonstrated_skills": [
+          { "skill_id": "uuid", "skill_name": "Distributed Systems", "is_primary": true }
+        ],
+        "artifacts": [
+          { "id": "uuid", "filename": "architecture-spec.pdf", "size_bytes": 1048576, "mime_type": "application/pdf" }
+        ]
+      },
+      "created_at": "2026-11-02T10:30:00Z",
+      "updated_at": "2026-11-02T10:30:00Z"
+    }
+  ]
+}
+```
+
+### `PATCH /api/v1/portfolios/me` 🔓
+Update portfolio metadata, bio, custom slug, display theme, and visibility settings.
+- **Validation Rules:**
+  - `slug`: Optional lowercase alphanumeric string with hyphens/underscores (3–60 chars). Rejects system-reserved slugs (`{"me", "items", "admin", "api", "auth", "courses", "projects", "users", "settings", "null", "undefined", "static", "public"}`). Ensures global uniqueness across all users.
+  - `visibility`: Synchronizes `settings["visibility"]` with `is_public` boolean (`PUBLIC` and `UNLISTED` set `is_public = True` to permit direct-link artifact retrieval, while `PRIVATE` sets `is_public = False`. `UNLISTED` portfolios are excluded from public catalog search and discovery listings).
+- **Response 200 OK:** `PortfolioDetailResponse`.
+
+### `POST /api/v1/portfolios/me/items` 🔓
+Add a completed project submission or custom external link to the learner's portfolio showcase.
+- **Validation Rules:**
+  - `item_type`: `PROJECT_SUBMISSION` or `CUSTOM`.
+  - For `PROJECT_SUBMISSION`:
+    - `reference_id` must point to a submission authored by the authenticated learner (ownership verification).
+    - Referenced submission must have status `COMPLETED` (uncompleted drafts or submissions under review are strictly rejected with 400).
+    - Duplicate references to the same submission in the learner's portfolio are rejected with 409 Conflict.
+    - Automatically populates `demonstrated_skills` from project `ProjectSkill` links and filters `artifacts` to include only public artifacts (`is_public == True`).
+  - Auto-calculates `sort_order` to place newly added items at the end of the collection if not explicitly specified.
+- **Response 201 Created:** `PortfolioItemResponse`.
+
+### `PATCH /api/v1/portfolios/me/items/{item_id}` 🔓
+Update title, summary, visibility (`PUBLIC`, `PRIVATE`, `UNLISTED`), external URL, featured flag, or sort order for a portfolio item.
+- Enforces portfolio ownership.
+- **Response 200 OK:** `PortfolioItemResponse`.
+
+### `DELETE /api/v1/portfolios/me/items/{item_id}` 🔓
+Remove an item from the learner's portfolio.
+- **Non-Destructive Guarantee:** Deleting a portfolio item removes only the showcase reference link. Source project submissions, evaluation histories, uploaded artifacts, and progression mastery records remain completely untouched.
+- **Response 204 No Content**.
+
+### `POST /api/v1/portfolios/me/items/reorder` 🔓
+Reorder portfolio items in a single atomic operation.
+- **Body:** `{ "item_ids": ["uuid-1", "uuid-2", "uuid-3"] }`.
+- Validates that all IDs belong to the authenticated learner's portfolio.
+- Sequentially assigns zero-indexed `sort_order` based on array position.
+- **Response 200 OK:** Reordered array of `PortfolioItemResponse`.
+
+### `GET /api/v1/portfolios/{slug_or_id}` 🌐
+Resolve and view a public portfolio showcase by custom slug or user UUID.
+- **Privacy Enforcement Rules:**
+  - If portfolio visibility is `PRIVATE`: Returns 403 Forbidden for unauthenticated users and third-party learners (only the portfolio owner can view private portfolios).
+  - If portfolio visibility is `UNLISTED`: Resolvable by anyone possessing the exact slug/link.
+  - If portfolio visibility is `PUBLIC`: Resolvable in public listings and by direct slug/ID.
+  - **Item Sanitization:** Third-party visitors and anonymous viewers receive only items with `visibility == "PUBLIC"`. Private or draft portfolio items are stripped from the response. Internal storage paths, filesystem keys, and private evaluator notes are strictly excluded.
+- **Response 200 OK:** `PortfolioPublicResponse`.
+
+---
 
 1. **All request bodies** are validated against Pydantic schemas. Invalid requests receive 400 with field-level error details.
 2. **Path parameters** (UUIDs, slugs) are validated for format before database lookup.

@@ -67,6 +67,25 @@ class Settings(BaseSettings):
     ai_store_content: bool = False  # Privacy default: do not persist raw learner prompt/response text
     ai_max_input_length: int = 1000  # Cap learner questions to 1000 characters
 
+    # ── Storage Configuration (Phase 9) ─────────────
+    storage_provider: Literal["local", "s3", "disabled"] = "local"
+    storage_local_root: str = "uploads/artifacts"
+    storage_max_file_size_mb: int = 20  # Max artifact size: 20MB
+    storage_allowed_extensions: list[str] = [
+        ".zip",
+        ".tar.gz",
+        ".tgz",
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".txt",
+        ".md",
+        ".json",
+        ".csv",
+    ]
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: object) -> list[str]:

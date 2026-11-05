@@ -9,6 +9,8 @@ import {
   Sparkles,
   BookOpen,
   FolderGit2,
+  Briefcase,
+  Award,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
@@ -41,6 +43,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
       icon: Network,
       badge: 'Interactive'
     },
+    {
+      to: '/projects',
+      label: 'Projects',
+      icon: Briefcase,
+      badge: 'Capstone'
+    },
+    ...(user
+      ? [
+          {
+            to: '/portfolio',
+            label: 'Portfolio',
+            icon: Award,
+            badge: 'Showcase',
+          },
+        ]
+      : []),
     ...(isCreatorOrAdmin
       ? [
           {

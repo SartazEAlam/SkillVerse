@@ -568,7 +568,7 @@ This document defines the phased implementation roadmap. Each phase includes obj
 
 ## Phase 9: Projects, Portfolio and Specialized Learning Activities
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete (Stages 1–7 Complete — Ready for Independent Phase 9 Final Audit)
 
 ### Objectives
 - Implement capstone projects with milestones.
@@ -579,6 +579,156 @@ This document defines the phased implementation roadmap. Each phase includes obj
 ### Dependencies
 - Phase 5 (activity engine).
 - Phase 6 (progression and mastery).
+
+### Stage 1 Deliverables (Database Migration & Secure Artifact Storage Foundation)
+- **Database Schema & Migrations:**
+  - `backend/app/modules/projects/models.py`: Added SQLAlchemy 2.0 models `Project`, `ProjectSkill`, `ProjectSubmission`, `ProjectArtifact`, `Portfolio`, and `PortfolioItem`.
+  - Added explicit submission revision hierarchy (`revision_of_id`) to preserve complete submission history without destructive overwrites.
+  - Added dedicated relational entity `ProjectArtifact` for upload referential integrity, checksum verification (`checksum_sha256`), and cascade deletions.
+  - `backend/alembic/versions/006_projects_and_portfolios.py`: Versioned Alembic migration with PostgreSQL/SQLite compatibility, index creation, unique constraints, and safe downgrade.
+- **Provider-Neutral Storage Abstraction:**
+  - `backend/app/infrastructure/storage/base.py`: Declared `StorageInterface`, `StoredFileMetadata`, and typed storage domain exceptions (`StorageFileNotFoundError`, `StorageFileTooLargeError`, `StorageInvalidTypeError`, `StorageSecurityError`).
+  - `backend/app/infrastructure/storage/local_storage.py`: Implemented `LocalStorageService` with strict path traversal prevention, server-side random key generation, magic byte signature sniffing (PNG, JPEG, PDF, ZIP), blocked executable blacklist, streaming chunked I/O, and disk size caps.
+  - `backend/app/infrastructure/storage/factory.py`: Added dependency factory with singleton caching and runtime provider selection (`local`, `s3`, `disabled`).
+- **Configuration & System Verification:**
+  - `backend/app/config.py`: Extended settings with `storage_provider`, `storage_local_root`, `storage_max_file_size_mb` (20MB), and `storage_allowed_extensions`.
+  - `.env.example`: Added safe development defaults for storage configuration.
+  - `.gitignore`: Added `uploads/` and `storage/` to exclude runtime and test artifacts.
+  - `backend/tests/test_storage.py`: 14 unit tests covering storage, retrieval, streaming, deletion, size caps, dangerous extension blocking, magic byte verification, and path traversal rejection.
+  - `backend/tests/test_projects_models.py`: 8 database tests covering model relationships, revision chains, unique constraints, and cascade deletions.
+  - 162/162 backend tests pass, 78/78 frontend tests pass, and `alembic check` reports 0 schema drift.
+
+### Stage 2 Deliverables (Backend Projects & Submissions Module & Remediation)
+- **Pydantic Validation Schemas:**
+  - `backend/app/modules/projects/schemas.py`: Implemented typed request/response schemas for project authoring (`ProjectCreateRequest`, `ProjectUpdateRequest`), catalog exploration (`ProjectSummaryResponse`, `ProjectDetailResponse`, `ProjectPaginatedResponse`), submissions lifecycle (`SubmissionCreateRequest`, `SubmissionUpdateRequest`, `SubmissionRevisionRequest`, `SubmissionDetailResponse`), evaluation (`SubmissionEvaluationRequest`, `EvaluationResponse`), and artifacts (`ArtifactResponse`, `ArtifactListResponse`). Documented `transition_history` tracking field.
+- **Domain Services:**
+  - `backend/app/modules/projects/service.py`: `ProjectService` implementing catalog discovery with pagination, sorting, filters (discipline, skill, difficulty, search keyword), status gating (non-creators see only PUBLISHED projects), creator authoring, completeness validation on publish, and archiving.
+  - `backend/app/modules/projects/submission_service.py`: `SubmissionService` governing the authoritative submission state machine (`DRAFT` -> `SUBMITTED` -> `UNDER_REVIEW` -> `EVALUATED` -> `COMPLETED` / `CHANGES_REQUESTED`), persisting the intermediate `EVALUATED` status before outcome enforcement, recording comprehensive transition history (`transition_history`), duplicate draft prevention, milestone tracking, evaluator review claiming, prevention of self-evaluation, rubric-based criteria evaluation, and immutable revision trees (`revision_of_id`) that never cross user or project boundaries.
+  - `backend/app/modules/projects/artifact_service.py`: `ArtifactService` with dual-layer concurrency protection (`with_for_update()` row locking for PostgreSQL and in-process mutex registry `_submission_locks` for SQLite dev/testing), 20MB per-file limit, 50MB aggregate per-submission limit, max 10 artifacts per submission, hourly user rate limiting (10 uploads/hr via `limiter`), atomic rollback of stored files on database failure, and 5-gate portfolio download authorization with safe download headers (`Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`) sanitizing CRLF injection.
+- **REST API Routers:**
+  - `backend/app/modules/projects/router.py`: Registered 15+ endpoints under `/api/v1` for projects, submissions, revisions, reviews, evaluations, artifact upload/delete, and gated binary downloads.
+  - `backend/app/main.py`: Mounted `projects_router` under `/api/v1`.
+- **Test Coverage:**
+  - `backend/tests/test_projects_api.py`: Catalog exploration, creator authoring, role gating, completeness validation, and archiving (6 tests).
+  - `backend/tests/test_submissions_api.py`: Draft lifecycle, duplicate draft prevention, self-evaluation prevention, evaluation pass, changes requested, revision tree, learner submission listings, full lifecycle transition history verification, cross-user revision rejection, and cross-project revision rejection (9 tests).
+  - `backend/tests/test_artifacts_api.py`: Valid uploads (PDF, TXT, MD, JSON, CSV), blocked executable extensions, disguised MZ/ELF headers, null bytes in text, rate limiting, draft-only deletion, owner/reviewer download, independent 5-gate public portfolio download checks, aggregate 50MB limit rejection, 11th artifact rejection, concurrent uploads quota enforcement, DB failure rollback cleanup, guessed UUIDs, CRLF filename sanitization, and unauthorized deletion (14 tests).
+  - 29 new tests passing (191 total backend tests).
+
+### Stage 3 Deliverables (Backend Portfolio & Progression Integration)
+- **Pydantic Validation Schemas:**
+  - `backend/app/modules/projects/schemas.py`: Implemented typed Pydantic models `PortfolioUpdateRequest`, `PortfolioItemCreateRequest`, `PortfolioItemUpdateRequest`, `PortfolioItemReorderRequest`, `PortfolioItemResponse`, `PortfolioDetailResponse`, and `PortfolioPublicResponse`. Added case-insensitive normalization validators for item type and visibility enums.
+  - `backend/app/modules/progress/schemas.py`: Enhanced `SkillEvidenceItem` to support optional activity fields and include capstone project evidence (`project_id`, `project_title`, `submission_id`).
+- **Domain Services:**
+  - `backend/app/modules/projects/portfolio_service.py`: `PortfolioService` providing auto-creation of default private portfolios on first access (`GET /portfolios/me`), bio/theme/slug updates, reserved slug protection (`me`, `items`, `admin`, `api`, `auth`, `courses`, `projects`, `users`, `settings`, etc.), custom slug global uniqueness, submission ownership verification, requirement that only `COMPLETED` submissions can be added, public artifact filtering, sequential sort order calculation, atomic item reordering, non-destructive item deletion preserving underlying submissions and artifacts, and public showcase privacy enforcement (`PRIVATE` portfolios return 403 Forbidden to anonymous viewers, while `UNLISTED` and `PUBLIC` portfolios expose only public items, scrubbing internal filesystem keys and evaluator notes).
+  - `backend/app/modules/projects/submission_service.py`: Integrated progression triggers: transitions skills to `PRACTICING` on project submission, and triggers skill mastery recalculation across all linked `ProjectSkill` records when evaluation concludes with `COMPLETED` or `CHANGES_REQUESTED`.
+  - `backend/app/modules/progress/service.py`: Extended `ProgressionService.recalculate_skill_mastery` to query completed project submissions, deduplicate revisions by `project_id` preserving the highest score, format evidence items under rule `"capstone_project_completed"`, and compute mastery levels across combined activity and project evidence (1 project $\rightarrow$ `PROVISIONAL`, $\ge 2$ tasks with $\ge 80\%$ avg $\rightarrow$ `MASTERED`).
+- **REST API Routers:**
+  - `backend/app/modules/projects/router.py`: Registered 7 portfolio endpoints under `/api/v1/portfolios`:
+    - `GET /api/v1/portfolios/me` 🔓 (Auto-creates default private portfolio)
+    - `PATCH /api/v1/portfolios/me` 🔓 (Update profile, slug, theme, visibility)
+    - `POST /api/v1/portfolios/me/items` 🔓 (Add completed submission or external link, status 201)
+    - `PATCH /api/v1/portfolios/me/items/{item_id}` 🔓 (Update item metadata/visibility/order)
+    - `DELETE /api/v1/portfolios/me/items/{item_id}` 🔓 (Non-destructive removal, status 204)
+    - `POST /api/v1/portfolios/me/items/reorder` 🔓 (Atomic batch item reordering)
+    - `GET /api/v1/portfolios/{slug_or_id}` 🌐 (Public showcase resolution with privacy filtering)
+- **Test Coverage:**
+  - `backend/tests/test_portfolio_api.py`: 8 end-to-end integration tests (auto-creation, metadata & visibility update, reserved slug rejection & custom slug uniqueness, completed project submission addition with public artifact filtering, submission validation rules, non-destructive deletion, sequential reordering, and public showcase privacy enforcement).
+  - `backend/tests/test_project_progression.py`: 4 integration tests (completed project awards evidence and provisional mastery, incomplete/failed projects do not award mastery, revisions deduplicate by `project_id`, and 2 distinct tasks achieve `MASTERED` status).
+  - 15 new tests passing (206 total backend tests, 0 failures).
+
+### Stage 4 Deliverables (Specialized Practice Activity Upgrades)
+- **Activity Engine & Deterministic Rubric Graders:**
+  - `backend/app/modules/activities/models.py`: Added `WEB_PRACTICE = "web_practice"` and `COMMUNICATION = "communication"` to `ActivityType`.
+  - `backend/app/modules/activities/schemas.py`: Defined Pydantic models for `MilestoneItem`, `WebPracticeConfig`, `WebPracticeSubmission`, `CommunicationSection`, `CommunicationConfig`, and `CommunicationSubmission`.
+  - `backend/app/modules/activities/grading.py`:
+    - `WebPracticeGrader`: Implemented deterministic scoring across milestone checklist completion and technical reflection depth ($\ge 10$ words). Enforced strict URL format validation (`SAFE_URL_REGEX`, domain validation, blocking `javascript:`, `file:`, `data:`). Invariant: no arbitrary code execution or untrusted repository sandboxing.
+    - `CommunicationGrader`: Deterministic structural grading supporting BLUF (Bottom Line Up Front $\ge 5$ words, context details, next steps) and STAR (Situation, Task, Action, Result $\ge 10$ words each) with word count boundaries and section completeness.
+    - `OrderingGrader`: Upgraded to support multiple acceptable sequence permutations via `acceptable_orders` (`list[list[str]]`) alongside single `correct_order`.
+    - `MatchingGrader`: Upgraded to support multi-target pairing via `acceptable_pairs` (`dict[str, list[str]]`) alongside single `pairs`.
+    - Registered new graders in `GradingEngine._graders`.
+- **Grounded Formative AI Writing Review:**
+  - `backend/app/infrastructure/ai/base.py`: Defined `CommunicationFeedbackContext`, `AICommunicationFeedbackResponse`, and abstract method `review_communication`.
+  - `backend/app/infrastructure/ai/mock_provider.py` & `gemini_provider.py`: Implemented structured qualitative review extracting summary, key strengths, areas for improvement, actionable tips, and section feedback.
+  - `backend/app/modules/ai/service.py`: Added `review_communication` enforcing user `ai_opt_out` preferences, stripping confidential answer keys, rate limiting, and auditing telemetry in `ai_interactions` (`interaction_type="communication_feedback"`).
+  - `backend/app/modules/ai/router.py`: Mounted `POST /api/v1/ai/communication-feedback`.
+- **Frontend Specialized Components & Accessible Interactions:**
+  - `frontend/src/types/activity.ts` & `frontend/src/types/ai.ts`: TypeScript contracts for `web_practice`, `communication`, submissions, and AI communication feedback.
+  - `frontend/src/features/activities/WebPracticeActivity.tsx`: Problem statement card, learning objectives list, interactive milestone checklist with completion counters, repository URL & live demo URL inputs with real-time format validation alerts, implementation notes, reflection textarea with word count counter, and security non-execution policy notice.
+  - `frontend/src/features/activities/CommunicationActivity.tsx`: Scenario context with audience and objective badges, BLUF / STAR structured writing inputs with real-time word counters, reflection textarea, and "Request AI Writing Review" button with formative coaching feedback display.
+  - `frontend/src/features/activities/OrderingActivity.tsx`: Upgraded with keyboard reordering (`ArrowUp`/`ArrowDown`/`Home`/`End`), accessible movement buttons, and `aria-live="polite"` screen reader announcements.
+  - `frontend/src/features/activities/MatchingActivity.tsx`: Accessible pairing dropdowns with real-time matched counter, visual checkmarks/status indicators, and live announcements.
+  - `frontend/src/features/activities/ActivityRenderer.tsx`: Dispatches `web_practice` and `communication` activity types.
+  - `frontend/src/features/activities/ActivityContainer.tsx`: Integrated submission validation for web practice deliverables and communication sections.
+  - `frontend/src/services/aiApi.ts`: Added `getCommunicationFeedback` method.
+- **Verification & Test Coverage:**
+  - `backend/tests/test_specialized_activities.py`: 17 unit and end-to-end integration tests (web practice rubric grading, unsafe URL scheme rejection, milestone scoring, reflection validation, BLUF/STAR validation, multi-order permutations, multi-pair matching, API attempt submission, AI writing review, and opt-out enforcement). 17 passed.
+  - `frontend/src/test/SpecializedActivities.test.tsx`: 12 frontend component and interaction tests. All 90 frontend tests passed across 11 test suites.
+  - `npm --prefix frontend run build`: Clean production bundle (0 errors).
+  - Zero database migrations required; `alembic check` verified 0 schema drift.
+
+### Stage 5 Deliverables (Frontend Projects & Submissions UI)
+- **TypeScript Contracts & API Client:**
+  - `frontend/src/types/project.ts`: Strict types reflecting backend schemas for project catalog summaries (`ProjectSummary`), detailed specifications (`ProjectDetail`), pagination (`ProjectPaginatedResponse`), requirements/milestones (`ProjectRequirements`, `Milestone`), rubrics (`EvaluationCriteria`, `RubricCriterion`), artifacts (`Artifact`, `ArtifactListResponse`), submissions lifecycle (`SubmissionSummary`, `SubmissionDetail`, `SubmissionStatus`), evaluation results (`EvaluationResult`, `CriteriaScore`), and revision history (`SubmissionHistoryResponse`, `TransitionHistoryItem`).
+  - `frontend/src/services/projectApi.ts`: Fully-typed API client governing project catalog discovery (`listProjects` with search, discipline, difficulty, sort, and pagination filters), project specifications (`getProject`), draft creation & retrieval (`startOrGetSubmission`), draft deliverables updates (`updateDraftSubmission`), deliverable submission (`submitProject`), revision drafting (`createRevision`), revision history (`getSubmissionHistory`), artifact uploads (`uploadArtifact` with `FormData` and `is_public` showcase toggle), artifact deletion (`deleteArtifact`), and secure download endpoint mapping.
+- **Frontend Project Components & Interactive Workspaces:**
+  - `frontend/src/features/projects/ProjectCard.tsx`: Learner-facing catalog card displaying project title, difficulty level badge, estimated duration, discipline tag, primary & secondary demonstrated skill badges, submission count, and view details action link.
+  - `frontend/src/features/projects/ProjectFilters.tsx`: Catalog filter bar featuring debounced text search, active discipline selector, difficulty filter (Beginner, Intermediate, Advanced, Expert), sorting controls (created_at, title, difficulty_level), order toggle (asc/desc), and reset filters button.
+  - `frontend/src/features/projects/MilestoneList.tsx`: Reusable milestone component supporting both read-only milestone progress overview (on project specification page) and interactive milestone completion checkboxes (on submission workspace page) with completion percentage progress bar.
+  - `frontend/src/features/projects/RubricView.tsx`: Rubric breakdown component visualizing passing score targets, rubric criteria cards with max scores and weights, and explicit assessment integrity disclaimer notes.
+  - `frontend/src/features/projects/ArtifactManager.tsx`: Comprehensive deliverable artifact management component with client-side file extension & size validation (allowing ZIP, TAR.GZ, PDF, PNG, JPG, WEBP, TXT, MD, JSON, CSV; rejecting hazardous executables/scripts .exe, .py, .sh), single file limit (20MB), aggregate submission quota (50MB) progress indicator, public portfolio showcase toggle, file download links, and draft-mode artifact deletion.
+  - `frontend/src/features/projects/EvaluationFeedback.tsx`: Evaluator feedback card displaying final grade, passing score comparison, pass/fail status badge, general written remarks, detailed rubric criteria breakdown scores and comments, reviewer identity, and evaluation timestamp.
+  - `frontend/src/features/projects/RevisionHistory.tsx`: Sequential revision history timeline component displaying sequential versions (v1, v2), status badges, dates, scores, active workspace indicator, and inspection links.
+- **Learner Pages & Routing Integration:**
+  - `frontend/src/pages/ProjectsPage.tsx` (`/projects`): Applied capstones catalog page with hero banner, filter controls, responsive grid, loading skeletons, error states with retry, empty state with filter reset, and pagination controls.
+  - `frontend/src/pages/ProjectDetailPage.tsx` (`/projects/:slugOrId`): Full project specification page with scope overview, demonstrated skills, milestone list, expected deliverables, upload guidelines, evaluation rubric, starter templates, and conditional action buttons (unauthenticated login redirect, start project draft, or resume active workspace).
+  - `frontend/src/pages/SubmissionWorkspacePage.tsx` (`/submissions/:submissionId`): Real submission workspace with draft deliverables form (title, summary, repository URL, live deployment URL, technical notes), interactive milestone checkboxes, artifact manager, lifecycle state banner, evaluation feedback card, and revision draft launcher when changes are requested.
+  - `frontend/src/app/routes.tsx`: Registered `/projects`, `/projects/:slugOrId`, and `/submissions/:submissionId`.
+  - `frontend/src/components/layout/Header.tsx` & `Sidebar.tsx` & `MobileNav.tsx`: Added navigation links and page title / breadcrumb mapping for Projects and Submission Workspaces.
+- **Verification & Test Coverage:**
+  - `frontend/src/test/Projects.test.tsx`: 16 comprehensive unit and integration tests covering catalog discovery, keyword filtering, empty/error/retry states, project details, rubric rendering, unauthenticated login redirect, authenticated project start, draft editing & saving, client-side malicious script rejection (.py/.exe), client-side oversize rejection (>20MB), valid artifact upload, project submission transition, evaluation feedback rendering, revision draft creation, and revision history timeline.
+  - All 106 frontend tests passing across 12 test suites (`npm --prefix frontend test -- --run`).
+  - Production build clean (`npm --prefix frontend run build` exited with code 0).
+  - Protected file `CourseEditorPage.tsx` remained completely untouched.
+
+### Stage 6 Deliverables (Frontend Portfolio Management & Public Showcase)
+- **TypeScript Contracts & API Client:**
+  - `frontend/src/types/portfolio.ts`: Strict types reflecting backend Pydantic schemas for portfolio details (`PortfolioDetail`), public showcase (`PortfolioPublic`), showcase items (`PortfolioItem`, `PortfolioArtifact`), visibility levels (`PortfolioVisibility`: `PRIVATE`, `UNLISTED`, `PUBLIC`), item types (`PortfolioItemType`: `PROJECT_SUBMISSION`, `SKILL_MASTERY`, `ACHIEVEMENT`, `CUSTOM`), profile updates (`PortfolioUpdateRequest`), item creation/update payloads (`PortfolioItemCreateRequest`, `PortfolioItemUpdateRequest`), and item reordering (`PortfolioItemReorderRequest`).
+  - `frontend/src/services/portfolioApi.ts`: Fully-typed API client governing portfolio profile retrieval (`getMyPortfolio` auto-creating draft on first visit), profile updates (`updateMyPortfolio`), showcase item addition (`addPortfolioItem`), item metadata/visibility updates (`updatePortfolioItem`), non-destructive item removal (`deletePortfolioItem`), sequential item reordering (`reorderPortfolioItems`), public showcase discovery (`getPublicPortfolio`), and completed project submissions retrieval (`getCompletedSubmissions`).
+- **Learner Portfolio Showcase & Management Components:**
+  - `frontend/src/features/portfolio/PortfolioShareCard.tsx`: Share and exposure card displaying current visibility badge (Private, Unlisted, Public), generated shareable URL (`/u/:slugOrId/portfolio`), one-click copy button with visual feedback, preview link, and helpful privacy reminders.
+  - `frontend/src/features/portfolio/PortfolioProfileEditor.tsx`: Responsive form for editing showcase title, professional headline, biography, custom slug handle (`/u/:slug/portfolio`), visibility level radio controls (Private, Unlisted, Public), and public contact/social links (GitHub, LinkedIn, Personal Website, Twitter/X). Includes client-side slug format validation, error alerts, and success feedback.
+  - `frontend/src/features/portfolio/PortfolioItemCard.tsx`: Curated showcase item card displaying item type badge (Capstone Project, Skill Mastery, Achievement, Custom), item title, summary description, demonstrated competencies tags, public artifact attachments with secure download links (`/api/v1/artifacts/{id}/download`), and external live project links. In owner mode, provides accessible reorder controls (Move Up / Move Down buttons), edit modal launcher, and non-destructive removal action.
+  - `frontend/src/features/portfolio/PortfolioItemModal.tsx`: Accessible dialog modal supporting adding completed capstone project submissions (auto-populating verified deliverables, score, and demonstrated skills) or custom engineering achievements, with item visibility controls (Public vs. Private).
+  - `frontend/src/features/portfolio/PublicPortfolioShowcase.tsx`: Public-facing showcase layout featuring verified learner avatar, display name, verified learner badge, headline, biography, contact pills, aggregated competencies chips, featured capstone deliverables grid, artifact download links, empty state, and SkillVerse platform verification footer.
+- **Pages & Navigation Shell Integration:**
+  - `frontend/src/pages/PortfolioManagementPage.tsx` (`/portfolio`): Dedicated learner portfolio management workspace with tabbed navigation (Showcase Items vs. Profile & Links), share card, item curation grid, empty state with "Add Your First Item" prompt, and confirmation dialogs.
+  - `frontend/src/pages/PublicPortfolioPage.tsx` (`/u/:slugOrId/portfolio` & `/portfolio/:slugOrId`): Public showcase route with privacy enforcement handling 403 Forbidden ("This Portfolio is Private" state), 404 Not Found, loading skeletons, and public presentation.
+  - `frontend/src/app/routes.tsx`: Mounted `/portfolio`, `/portfolio/:slugOrId`, and `/u/:slugOrId/portfolio`.
+  - `frontend/src/components/layout/Header.tsx`, `Sidebar.tsx`, and `MobileNav.tsx`: Added "Portfolio" navigation entry with "Showcase" badge for authenticated learners, and breadcrumb header handling.
+- **Verification & Test Coverage:**
+  - `frontend/src/test/Portfolio.test.tsx`: 12 comprehensive unit and integration tests covering portfolio loading, profile editing and saving, visibility toggling (Private -> Unlisted -> Public), empty showcase state, completed project item addition, sequential reordering, non-destructive deletion with confirmation, error and retry states, public showcase rendering, 403 private access denial, 404 not found state, and strict privacy protection ensuring no internal storage keys or filesystem paths are exposed in the DOM.
+  - All 118 frontend tests passing across 13 test suites (`npm --prefix frontend test -- --run`).
+  - Production build clean (`npm --prefix frontend run build` exited with code 0).
+  - `frontend/src/pages/CourseEditorPage.tsx` remained completely untouched.
+
+### Stage 7 Deliverables (Full System Verification & Integration)
+- **Cross-Module Verification & Invariants Inspection:**
+  - Audited and verified all 9 platform core domains: Identity & Access, Learning Catalog & Content, Learning Activities & Assessment, Specialized Practice Activities, Progression & Mastery, Projects & Submissions Lifecycle, Portfolio & Public Showcase, AI Tutor with Grounding, and Creator Studio.
+  - Verified 12 core cross-module invariants: distinct course vs. project completions, hints not granting assessment progress, requirement of successful evaluation for project mastery evidence, project revision evidence deduplication, strict public portfolio privacy boundaries, 5-gate artifact download authorization, comprehensive AI opt-out enforcement, immutable published courses, and transactional cleanup of failed uploads.
+- **Group 1 Targeted Remediation (Storage Security & WebP Binary Validation):**
+  - Updated `backend/app/infrastructure/storage/local_storage.py` to implement genuine WebP binary signature verification (`RIFF` at byte offset 0 and `WEBP` at byte offset 8, minimum 12 bytes header validation) while rejecting invalid RIFF markers, missing WEBP markers, truncated headers, and arbitrary text renamed to `.webp`.
+  - Reinforced storage-root containment check (`_is_within_base_dir`) using `os.path.commonpath` and `is_relative_to` to strictly reject sibling directories that share string prefixes with the storage root, as well as the root directory itself.
+  - Added comprehensive test coverage in `backend/tests/test_storage.py`: `test_store_and_retrieve_valid_webp_image`, `test_reject_webp_invalid_riff_header`, `test_reject_webp_missing_webp_marker`, `test_reject_webp_arbitrary_text_renamed`, `test_reject_webp_truncated_header`, `test_reject_empty_signature_checked_file`, and `test_containment_rejects_sibling_directory_sharing_prefix`.
+- **Group 2 Targeted Remediation (Frontend Cleanliness & Warning Elimination):**
+  - Updated `frontend/src/pages/DashboardPage.tsx` to provide deterministic, unique keys based on actual item identities (`rec.id`, `rec.link`, `rec.course_slug`, `rec.skill_slug`, `rec.title` for recommendations, `att.attempt_id || att.activity_id` for recent attempts, `ach.id || ach.slug` for achievements, and unique IDs for loading skeletons), completely eliminating the React missing-key warning without using array indices where stable identifiers exist.
+  - Updated `frontend/src/test/Projects.test.tsx` to properly await asynchronous state updates in the search filter and filter reset tests using `await waitFor(...)`, eliminating all React `act(...)` warnings from the test suite.
+- **Verification & Regression Results:**
+  - Backend regression: 228 passing tests across full test suite (`pytest backend/tests -q`).
+  - Linter: `ruff check backend` clean (0 errors).
+  - Database schema: `alembic check` clean (no upgrade operations detected).
+  - Frontend test suite: 118 passing tests across all 13 suites (`npm --prefix frontend test -- --run`) with 0 act warnings and 0 errors.
+  - Production build: `npm --prefix frontend run build` (`tsc -b && vite build`) passed with exit code 0.
+  - Protected invariants: `frontend/src/pages/CourseEditorPage.tsx` remained completely untouched. All uncommitted changes from Stages 1–6 preserved.
 
 ### Deliverables
 - Database migrations for projects, project_submissions, portfolios, portfolio_items.

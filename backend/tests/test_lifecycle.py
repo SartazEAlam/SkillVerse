@@ -42,7 +42,7 @@ class TestDatabaseMigrations:
 
         heads = script.get_heads()
         assert len(heads) == 1
-        assert heads[0] == "005_ai_interactions"
+        assert heads[0] == "006_projects_and_portfolios"
 
     def test_postgresql_migration_sql_has_no_duplicate_enum_creations(self) -> None:
         """Regression test: verify each PostgreSQL enum type is created exactly once during upgrade."""

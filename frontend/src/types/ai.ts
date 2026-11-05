@@ -51,3 +51,18 @@ export interface AIPeriodicPreferenceRequest {
   opt_out: boolean
 }
 
+export interface CommunicationFeedbackRequest {
+  activity_id: string
+  sections: Record<string, string>
+  reflection?: string
+}
+
+export interface CommunicationFeedbackResponse {
+  summary: string
+  strengths: string[]
+  improvements: string[]
+  actionable_tips: string[]
+  section_feedback: Record<string, string>
+  provider: string
+}
+

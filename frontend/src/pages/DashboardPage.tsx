@@ -105,8 +105,8 @@ export const DashboardPage: React.FC = () => {
           <div className="h-72 rounded-2xl bg-bg-surface animate-pulse" />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 rounded-xl bg-bg-surface animate-pulse" />
+          {['skel-1', 'skel-2', 'skel-3', 'skel-4'].map((skelId) => (
+            <div key={skelId} className="h-24 rounded-xl bg-bg-surface animate-pulse" />
           ))}
         </div>
       </div>
@@ -381,13 +381,19 @@ export const DashboardPage: React.FC = () => {
 
             {recommendations.length > 0 ? (
               <div className="space-y-3">
-                {recommendations.map((rec, idx) => {
+                {recommendations.map((rec) => {
                   const badgeLabel = (rec.type || rec.action_type || rec.badge || 'Recommendation').replace(/_/g, ' ')
                   const targetLink = rec.link || (rec.course_slug ? `/courses/${rec.course_slug}` : undefined)
+                  const itemKey =
+                    rec.id ||
+                    rec.link ||
+                    (rec.course_slug ? `rec-course-${rec.course_slug}` : undefined) ||
+                    (rec.skill_slug ? `rec-skill-${rec.skill_slug}` : undefined) ||
+                    `rec-${rec.title}`
 
                   return (
                     <div
-                      key={rec.id || idx}
+                      key={itemKey}
                       className="p-3.5 rounded-xl bg-bg-base border border-border-subtle flex items-start justify-between gap-3"
                     >
                       <div className="space-y-1 min-w-0">
@@ -438,7 +444,7 @@ export const DashboardPage: React.FC = () => {
               <div className="space-y-2">
                 {recentAttempts.slice(0, 5).map((att) => (
                   <div
-                    key={att.attempt_id}
+                    key={att.attempt_id || att.activity_id}
                     className="p-3 rounded-lg bg-bg-base border border-border-subtle flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -489,7 +495,7 @@ export const DashboardPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {achievements.map((ach) => (
               <Card
-                key={ach.id}
+                key={ach.id || ach.slug}
                 variant={ach.earned ? 'elevated' : 'base'}
                 className={`p-4 flex flex-col items-center text-center space-y-2 transition-all ${
                   ach.earned
