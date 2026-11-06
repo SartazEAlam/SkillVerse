@@ -1678,7 +1678,7 @@ Retrieve the authenticated learner's portfolio profile, custom slug, theme setti
 ### `PATCH /api/v1/portfolios/me` 🔓
 Update portfolio metadata, bio, custom slug, display theme, and visibility settings.
 - **Validation Rules:**
-  - `slug`: Optional lowercase alphanumeric string with hyphens/underscores (3–60 chars). Rejects system-reserved slugs (`{"me", "items", "admin", "api", "auth", "courses", "projects", "users", "settings", "null", "undefined", "static", "public"}`). Ensures global uniqueness across all users.
+  - `custom_slug`: Optional lowercase alphanumeric string with hyphens/underscores (3–100 chars, regex `^[a-zA-Z0-9_-]+$`). Rejects system-reserved slugs (`{"me", "mine", "items", "reorder", "admin", "api", "download", "artifacts", "submissions", "projects", "public", "new", "edit"}`). Ensures global uniqueness across all users.
   - `visibility`: Synchronizes `settings["visibility"]` with `is_public` boolean (`PUBLIC` and `UNLISTED` set `is_public = True` to permit direct-link artifact retrieval, while `PRIVATE` sets `is_public = False`. `UNLISTED` portfolios are excluded from public catalog search and discovery listings).
 - **Response 200 OK:** `PortfolioDetailResponse`.
 

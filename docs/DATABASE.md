@@ -359,30 +359,47 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK | Project identifier |
-| course_version_id | UUID | FK → course_versions.id, NOT NULL | Associated course |
+| slug | VARCHAR(200) | UNIQUE, NOT NULL, INDEX | URL-safe unique project slug |
 | title | VARCHAR(300) | NOT NULL | Project title |
-| description | TEXT | NOT NULL | Project brief |
-| requirements | JSONB | NOT NULL | Structured requirements and milestones |
-| evaluation_criteria | JSONB | NOT NULL | How the project is evaluated |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
-| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| short_description | TEXT | NOT NULL | Brief project summary |
+| full_description | TEXT | NOT NULL | Detailed project brief and instructions |
+| course_version_id | UUID | FK → course_versions.id, NULLABLE, INDEX | Associated course version (null for standalone) |
+| discipline_id | UUID | FK → disciplines.id, NOT NULL, INDEX | Associated discipline |
+| difficulty_level | VARCHAR(50) | NOT NULL, DEFAULT 'BEGINNER' | Difficulty: BEGINNER, INTERMEDIATE, ADVANCED |
+| estimated_duration_hours | INTEGER | NULLABLE | Estimated completion duration in hours |
+| requirements | JSONB | NOT NULL, DEFAULT '{}' | Structured requirements and milestones |
+| evaluation_criteria | JSONB | NOT NULL, DEFAULT '{}' | Structured rubric criteria and score weights |
+| starter_resources | JSONB | NOT NULL, DEFAULT '[]' | Starter templates, repos, documentation links |
+| status | VARCHAR(50) | NOT NULL, DEFAULT 'DRAFT' | ProjectStatus: DRAFT, PUBLISHED, ARCHIVED |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Record creation timestamp |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
+#### `project_skills`
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| project_id | UUID | PK, FK → projects.id, NOT NULL, ON DELETE CASCADE | Associated project |
+| skill_id | UUID | PK, FK → skills.id, NOT NULL, ON DELETE CASCADE | Demonstrated skill |
+| is_primary | BOOLEAN | NOT NULL, DEFAULT false | Whether skill is a primary focal competency |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Association creation timestamp |
+| | | PK(project_id, skill_id) | Composite primary key |
 
 #### `project_submissions`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK | Submission identifier |
-| project_id | UUID | FK → projects.id, NOT NULL | Target project |
-| user_id | UUID | FK → users.id, NOT NULL | Submitting learner |
+| project_id | UUID | FK → projects.id, NOT NULL, INDEX | Target project |
+| user_id | UUID | FK → users.id, NOT NULL, INDEX | Submitting learner |
 | version_number | INTEGER | NOT NULL, DEFAULT 1 | Sequential version number for this submission |
-| revision_of_id | UUID | FK → project_submissions.id, NULLABLE | Optional link to prior revision being updated |
-| status | ENUM('DRAFT','SUBMITTED','UNDER_REVIEW','CHANGES_REQUESTED','EVALUATED','COMPLETED') | NOT NULL, DEFAULT 'DRAFT' | Lifecycle state |
+| revision_of_id | UUID | FK → project_submissions.id, NULLABLE, INDEX | Optional link to prior revision being updated |
+| status | VARCHAR(50) | NOT NULL, DEFAULT 'DRAFT', INDEX | SubmissionStatus: DRAFT, SUBMITTED, UNDER_REVIEW, CHANGES_REQUESTED, EVALUATED, COMPLETED |
 | title | VARCHAR(300) | NULLABLE | Submission title |
 | summary | TEXT | NULLABLE | Learner reflection / description |
-| content | JSONB | NOT NULL | Deliverables (repo URL, live demo, answers) |
+| content | JSONB | NOT NULL, DEFAULT '{}' | Deliverables (repo URL, live demo, answers) |
 | milestones_completed | JSONB | NOT NULL, DEFAULT '[]' | List of completed milestone IDs |
 | evaluation | JSONB | NULLABLE | Evaluation results, rubric scores, and feedback |
 | score | FLOAT | NULLABLE | Overall score if evaluated |
 | passed | BOOLEAN | NULLABLE | Whether submission passed evaluation |
+| transition_history | JSONB | NOT NULL, DEFAULT '[]' | Audit trail of submission state changes |
 | submitted_at | TIMESTAMPTZ | NULLABLE | Final submission timestamp |
 | evaluated_at | TIMESTAMPTZ | NULLABLE | Evaluation timestamp |
 | evaluator_id | UUID | FK → users.id, NULLABLE | Reviewing creator or admin |
@@ -394,9 +411,9 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK | Artifact identifier |
-| submission_id | UUID | FK → project_submissions.id, NOT NULL, ON DELETE CASCADE | Owning submission |
-| user_id | UUID | FK → users.id, NOT NULL, ON DELETE RESTRICT | Uploading user |
-| storage_key | VARCHAR(500) | UNIQUE, NOT NULL, INDEX | Server-generated storage key |
+| submission_id | UUID | FK → project_submissions.id, NOT NULL, ON DELETE CASCADE, INDEX | Owning submission |
+| user_id | UUID | FK → users.id, NOT NULL, ON DELETE RESTRICT, INDEX | Uploading user |
+| storage_key | VARCHAR(500) | UNIQUE, NOT NULL, INDEX | Server-generated random UUID storage key |
 | original_filename | VARCHAR(255) | NOT NULL | Cleaned display filename |
 | mime_type | VARCHAR(100) | NOT NULL | MIME content type |
 | file_size_bytes | INTEGER | NOT NULL | Size in bytes |
@@ -408,11 +425,14 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 #### `portfolios`
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| user_id | UUID | PK, FK → users.id | One portfolio per user |
-| is_public | BOOLEAN | NOT NULL, DEFAULT false | Whether portfolio is publicly accessible |
-| custom_slug | VARCHAR(100) | UNIQUE, NULLABLE | Custom URL slug |
-| bio_override | TEXT | NULLABLE | Portfolio-specific bio |
-| settings | JSONB | NOT NULL, DEFAULT '{}' | Display settings |
+| user_id | UUID | PK, FK → users.id, ON DELETE CASCADE | One portfolio per user |
+| is_public | BOOLEAN | NOT NULL, DEFAULT false, INDEX | Whether portfolio is publicly accessible |
+| custom_slug | VARCHAR(100) | UNIQUE, NULLABLE, INDEX | Custom URL handle (3-100 alphanumeric/dash/underscore) |
+| title | VARCHAR(200) | NULLABLE | Portfolio display title |
+| headline | VARCHAR(300) | NULLABLE | Professional headline |
+| bio_override | TEXT | NULLABLE | Portfolio-specific biography |
+| contact_links | JSONB | NOT NULL, DEFAULT '{}' | Social & portfolio links (GitHub, LinkedIn, site) |
+| settings | JSONB | NOT NULL, DEFAULT '{}' | Display settings (theme, visibility) |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Portfolio creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
@@ -420,11 +440,16 @@ Courses ──> CourseVersions ──> Modules ──> Lessons ──> LessonBlo
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | UUID | PK | Item identifier |
-| user_id | UUID | FK → portfolios.user_id, NOT NULL | Portfolio owner |
-| item_type | VARCHAR(50) | NOT NULL | 'project_submission', 'achievement', 'skill_mastery' |
-| reference_id | UUID | NOT NULL | ID of the referenced item |
-| sort_order | INTEGER | NOT NULL | Display order |
-| is_visible | BOOLEAN | NOT NULL, DEFAULT true | Whether to show in public portfolio |
+| portfolio_user_id | UUID | FK → portfolios.user_id, NOT NULL, ON DELETE CASCADE, INDEX | Portfolio owner |
+| item_type | VARCHAR(50) | NOT NULL | 'PROJECT_SUBMISSION', 'SKILL_MASTERY', 'ACHIEVEMENT', 'CUSTOM' |
+| reference_id | UUID | NULLABLE, INDEX | ID of referenced submission, mastery, or achievement |
+| title | VARCHAR(300) | NOT NULL | Item display title |
+| summary | TEXT | NULLABLE | Item description or reflection |
+| skills_demonstrated | JSONB | NOT NULL, DEFAULT '[]' | List of competency names/tags |
+| artifacts | JSONB | NOT NULL, DEFAULT '[]' | Public deliverable artifact references |
+| external_url | VARCHAR(500) | NULLABLE | Optional external demonstration link |
+| sort_order | INTEGER | NOT NULL, DEFAULT 0 | Display ordering index |
+| visibility | VARCHAR(50) | NOT NULL, DEFAULT 'PUBLIC' | 'PRIVATE', 'UNLISTED', 'PUBLIC' |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Item creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Last update timestamp |
 
@@ -538,7 +563,7 @@ The following cascade behaviors apply to foreign key relationships:
 | Phase 6 | skill_mastery, achievements, user_achievements |
 | Phase 7 | course_reviews |
 | Phase 8 | ai_interactions |
-| Phase 9 | projects, project_submissions, portfolios, portfolio_items |
+| Phase 9 | projects, project_skills, project_submissions, project_artifacts, portfolios, portfolio_items |
 | All phases | audit_events (extended incrementally) |
 
 > **Note:** `enrollments` and `lesson_progress` are introduced in Phase 3 because the enrollment API and module-sidebar progress indicators are Phase 3 deliverables. Skill mastery and achievements remain in Phase 6, where the progression engine is fully built.

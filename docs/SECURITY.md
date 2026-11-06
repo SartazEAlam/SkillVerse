@@ -330,3 +330,93 @@ With the introduction of the Universal Lesson Renderer in Phase 4, the frontend 
 - **AbortController Invalidation:** Every lesson route transition instantiates an `AbortController` to cancel in-flight network requests. Out-of-order API responses cannot overwrite active lesson state.
 - **Demo Fallback Isolation:** Demo fallback mode is strictly gated to development or explicit demo tracks (`demo-*`). Backend failures (HTTP 500, network timeouts) display a transparent error card with retry capabilities and never mask system errors with demo content.
 
+---
+
+## Phase 5: Code Sandbox Execution Boundary & Assessment Confidentiality
+
+With the introduction of the interactive assessment engine in Phase 5, the platform establishes critical confidentiality and execution boundaries:
+
+### 1. Confidential Answer Keys & Secret Scrubbing
+- **Server-Authoritative Evaluation:** All activity grading is executed server-side. Answer keys, correct options, rubrics, and solution benchmarks are never transmitted to client devices.
+- **Scrubbed Activity Payloads:** Learner-facing activity endpoints serialize schemas via dedicated learner views (`ActivityLearnerResponse`), stripping `answer_key`, `grading_config`, and reference solutions before sending JSON payloads over the network.
+- **Attempt History Isolation:** Attempt records are strictly scoped to the authenticated learner. Cross-user attempt inspection is rejected with `403 Forbidden`.
+
+### 2. Untrusted Learner Code Isolation Boundary
+- **Sandbox Boundary Contract:** Untrusted code execution is decoupled from the FastAPI application process via `SandboxRunnerInterface`. Learner code is never evaluated inside the API web worker.
+- **Resource Constraints:** Invocations enforce strict cgroup resource constraints (CPU timeout, 256MB memory cap, no swap, unprivileged execution, process count limits).
+- **Network Isolation:** Code container workers run with disabled network interfaces (`--network none`) to prevent SSRF, data exfiltration, or lateral network scanning.
+
+---
+
+## Phase 8: AI Tutoring Privacy, Sliding-Window Rate Limits & Opt-Out Enforcement
+
+### 1. User Opt-Out Privacy Enforcement
+- **Universal Opt-Out Check:** Learners can disable AI features via their preferences (`ai_opt_out: true`). Both the backend service layer and API routes verify this flag before invoking any AI provider.
+- **Disabled Feedback Fallback:** When opt-out is active, AI tutor queries, hint requests, and formative writing feedback return explicit disabled indicators without dispatching external API requests.
+
+### 2. User-Scoped Sliding-Window Rate Limiting
+- **In-Memory Window Tracking:** AI interactions enforce sliding-window user-scoped rate limits (30 questions/hr, 10 progressive hints/hr). Requests exceeding limits receive HTTP 429 Too Many Requests with informative `Retry-After` headers.
+
+### 3. Context Sanitization & Ephemeral Telemetry
+- **PII & Answer Key Scrubbing:** Prompts sent to AI providers contain only instructional context, learner drafts, and scenario parameters. Confidential answer keys, user real names, and email addresses are strictly excluded.
+- **Privacy-First Audit Logging:** The `ai_interactions` table records provider metadata, token usage, latency, and status codes. Raw user prompts and generated completions are not persisted to database tables by default.
+
+---
+
+## Phase 9: Artifact Storage Security, Submission Integrity & Portfolio Privacy Boundaries
+
+With Phase 9, SkillVerse implements capstone project deliverables, learner file uploads, public showcase portfolios, and specialized practice activities. The following security controls govern these capabilities:
+
+### 1. Provider-Neutral Storage Architecture & Key Isolation
+- **Storage Abstraction:** The storage layer (`StorageInterface`, `LocalStorageService`) abstracts physical file persistence from application logic.
+- **Random UUID Keys:** Uploaded files are never written using original client filenames or user-controlled paths. Each file is assigned a cryptographically random UUID storage key (`storage_key`).
+- **Private-by-Default Isolation:** Files are stored in an isolated directory outside the web application document root. No web server statically serves the storage folder directly.
+
+### 2. Binary Magic-Byte & Signature Verification
+Every uploaded file undergoes two-tier validation: MIME type check and binary header (magic byte) verification:
+- **PDF (`application/pdf`):** Byte offset 0 must match `%PDF-`.
+- **PNG (`image/png`):** Byte offset 0 must match `\x89PNG\r\n\x1a\n`.
+- **JPEG (`image/jpeg`):** Byte offset 0 must match `\xff\xd8\xff`.
+- **WebP (`image/webp`):** Binary header validation requiring `RIFF` at byte offset 0 and `WEBP` at byte offset 8 (minimum 12 bytes). Renamed text files or truncated headers are strictly rejected.
+- **ZIP (`application/zip`):** Byte offset 0 must match `PK\x03\x04`, `PK\x05\x06`, or `PK\x07\x08`.
+- **Plaintext / Markdown / JSON (`text/plain`, `text/markdown`, `application/json`):** Strict UTF-8 validation and maximum file size enforcement.
+
+### 3. Path Traversal & Base Directory Containment Protection
+- **Containment Check (`_is_within_base_dir`):** Local storage operations resolve paths to strict canonical form and verify containment within the storage base directory using `os.path.commonpath` and `Path.is_relative_to`.
+- **Attack Prevention:** Strictly rejects directory traversal sequences (`..`), null bytes (`\x00`), sibling directories sharing string prefixes with the base directory, and operations targeting the storage root itself.
+
+### 4. Upload Quotas & Concurrency Protection
+- **Per-File & Aggregate Bounds:** Enforces 20MB maximum per file, 50MB aggregate per submission, and maximum 10 files per submission.
+- **Upload Rate Limiting:** 10 uploads per hour per user.
+- **Dual-Layer Concurrency Strategy:**
+  - *PostgreSQL (Production):* Row-level locking via `SELECT ... FOR UPDATE` (`with_for_update()`) on the active submission record within the transaction.
+  - *SQLite (Local Harness):* Process-level mutex serialization per submission ID (`_submission_locks` registry) to guarantee thread safety.
+- **Transactional Rollback:** Database commit failures or write exceptions automatically unlink newly written storage files to prevent orphaned artifacts.
+
+### 5. 5-Gate Download Authorization Model
+Deliverable downloads for anonymous or third-party users require passing five mandatory security gates:
+1. **Gate 1 (Portfolio Exists & Public):** The authoring learner's portfolio exists and is marked public (`portfolio.is_public == True`).
+2. **Gate 2 (Submission Completed):** The referenced submission has successfully completed evaluation (`submission.status == 'COMPLETED'`).
+3. **Gate 3 (Artifact Public):** The artifact itself is explicitly flagged as public (`artifact.is_public == True`).
+4. **Gate 4 (Portfolio Item Reference):** A portfolio item exists that specifically references this submission ID or artifact ID.
+5. **Gate 5 (Portfolio Item Public):** The referencing portfolio item visibility is set to public (`item.visibility == 'PUBLIC'`).
+
+### 6. Download Response Hardening
+- **Forced Download Disposition:** All artifact downloads set `Content-Disposition: attachment; filename="<sanitized>"`.
+- **CRLF Sanitization:** Filenames in download headers are stripped of `\r` and `\n` characters to eliminate HTTP response splitting attacks and MIME confusion.
+
+### 7. Submission State Machine Audit & Revision Immutability
+- **Authoritative States:** Submissions follow `DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `EVALUATED` → `COMPLETED` (or `CHANGES_REQUESTED`).
+- **Intermediate Audit State:** The `EVALUATED` state records rubric calculations and evaluator feedback before final completion status is determined.
+- **Audit History:** Full transition timestamps and reasons are audited in `transition_history`. Prior revisions are preserved immutably via `revision_of_id`.
+
+### 8. Portfolio Privacy & Sanitization
+- **Tri-State Visibility:** Portfolios support `PRIVATE`, `UNLISTED`, and `PUBLIC` modes.
+- **Access Denial:** Anonymous or non-owner requests to `PRIVATE` portfolios return HTTP 403 Forbidden.
+- **Response Sanitization:** Third-party responses include only items with `visibility == 'PUBLIC'`. Internal storage keys, server filesystem paths, and internal evaluator notes are stripped from JSON payloads.
+- **Slug Reservation:** Custom slugs are validated (3–100 alphanumeric/dash/underscore chars) and prohibited from matching reserved system routes (`RESERVED_SLUGS`).
+
+### 9. Specialized Practice Non-Execution Invariant
+- **No External Code Execution:** Practice activities (`web_practice`) do not fetch, download, or execute arbitrary learner code from external URLs.
+- **Safe URL Syntax Validation:** External repository and live demonstration links are validated against safe protocols (`http`, `https`) and domain syntax (`SAFE_URL_REGEX`). Schemes like `javascript:`, `file:`, and `data:` are rejected.
+
