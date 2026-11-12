@@ -43,8 +43,19 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:5173/auth/google/callback"
 
-    # ── CORS ─────────────────────────────────────────
+    # ── CORS & Security (Phase 10 Stage 2) ───────────
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_allow_credentials: bool = False
+    cors_max_age: int = 600
+
+    # ── Content Security Policy & HSTS (Phase 10 Stage 2) ──
+    csp_enabled: bool = True
+    csp_report_only: bool = True  # Rollout default: Report-Only mode
+    csp_report_uri: str = ""
+    hsts_enabled: bool = False  # Enabled in production when HTTPS is confirmed
+    hsts_max_age: int = 31536000
+    hsts_include_subdomains: bool = False
+    hsts_preload: bool = False
 
     # ── Redis ────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
@@ -86,18 +97,74 @@ class Settings(BaseSettings):
         ".csv",
     ]
 
-    @field_validator("cors_origins", mode="before")
+    # ── Security & Proxy Configuration (Phase 10) ─────
+    trusted_proxies: list[str] = []
+
+    @field_validator("trusted_proxies", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: object) -> list[str]:
+    def parse_trusted_proxies(cls, v: object) -> list[str]:
         if isinstance(v, str):
             import json
 
-            return list(json.loads(v))
-        return list(v)  # type: ignore[arg-type]
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except Exception:
+                pass
+            return [p.strip() for p in v.split(",") if p.strip()]
+        if isinstance(v, (list, tuple, set)):
+            return [str(item).strip() for item in v if str(item).strip()]
+        return []
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        raw_list: list[str] = []
+        if isinstance(v, str):
+            v_str = v.strip()
+            if not v_str:
+                return []
+            import json
+
+            try:
+                parsed = json.loads(v_str)
+                if isinstance(parsed, list):
+                    raw_list = [str(x).strip() for x in parsed if str(x).strip()]
+                else:
+                    raw_list = [str(parsed).strip()]
+            except Exception:
+                raw_list = [x.strip() for x in v_str.split(",") if x.strip()]
+        elif isinstance(v, (list, tuple, set)):
+            raw_list = [str(x).strip() for x in v if str(x).strip()]
+        else:
+            return []
+
+        cleaned: list[str] = []
+        from urllib.parse import urlparse
+
+        for orig in raw_list:
+            orig = orig.strip()
+            if not orig:
+                continue
+            if orig == "*":
+                cleaned.append("*")
+                continue
+            orig_no_slash = orig.rstrip("/")
+            parsed_url = urlparse(orig_no_slash)
+            if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+                raise ValueError(f"Invalid CORS origin format: '{orig}'")
+            if parsed_url.path:
+                raise ValueError(f"CORS origin must not contain a path component: '{orig}'")
+            cleaned.append(f"{parsed_url.scheme}://{parsed_url.netloc}")
+        return cleaned
 
     @model_validator(mode="after")
     def validate_production_environment(self) -> Self:
         """Enforce strict production security invariants."""
+        if self.cors_allow_credentials and "*" in self.cors_origins:
+            raise ValueError("CORS credentials cannot be enabled with wildcard origin.")
+
         if self.environment == "production":
             if self.database_url.startswith("sqlite"):
                 msg = (
@@ -119,6 +186,25 @@ class Settings(BaseSettings):
                     "of at least 32 characters."
                 )
                 raise ValueError(msg)
+
+            if not self.cors_origins:
+                msg = "Production environment requires explicit, valid HTTPS cors_origins."
+                raise ValueError(msg)
+
+            from urllib.parse import urlparse
+
+            for origin in self.cors_origins:
+                if origin == "*":
+                    msg = "Wildcard CORS origin '*' is strictly forbidden in production."
+                    raise ValueError(msg)
+                if origin.startswith("http://"):
+                    msg = f"Insecure HTTP CORS origin '{origin}' is forbidden in production."
+                    raise ValueError(msg)
+                p = urlparse(origin)
+                host = (p.hostname or "").lower()
+                if host in ("localhost", "127.0.0.1", "::1"):
+                    msg = f"Localhost CORS origin '{origin}' is forbidden in production."
+                    raise ValueError(msg)
         return self
 
     @property

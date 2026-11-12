@@ -489,12 +489,14 @@ class SubmissionService:
         }
 
     def claim_for_review(self, submission_id: str, evaluator: User) -> dict[str, Any]:
-        """Claim a submitted project for evaluation, enforcing role and self-evaluation rules."""
+        """Claim a submitted project for evaluation, enforcing role, ownership, and self-evaluation rules."""
         if evaluator.role not in (UserRole.CREATOR, UserRole.ADMIN):
             raise ProjectForbiddenError("Only creators and administrators can claim submissions for review.")
 
         submission = self.db.execute(
-            select(ProjectSubmission).where(ProjectSubmission.id == submission_id)
+            select(ProjectSubmission)
+            .where(ProjectSubmission.id == submission_id)
+            .options(selectinload(ProjectSubmission.project))
         ).scalar_one_or_none()
         if not submission:
             raise SubmissionNotFoundError(f"Submission '{submission_id}' was not found.")
@@ -502,6 +504,14 @@ class SubmissionService:
         # Self-evaluation prevention
         if evaluator.id == submission.user_id:
             raise ProjectForbiddenError("You cannot evaluate or claim your own submission.")
+
+        # Project ownership / authorization verification
+        is_admin = evaluator.role == UserRole.ADMIN
+        is_project_creator = bool(submission.project and submission.project.creator_id == evaluator.id)
+        is_assigned_evaluator = bool(submission.evaluator_id and submission.evaluator_id == evaluator.id)
+
+        if not (is_admin or is_project_creator or is_assigned_evaluator):
+            raise ProjectForbiddenError("You are not authorized to claim submissions for this project.")
 
         if submission.status not in (SubmissionStatus.SUBMITTED.value, SubmissionStatus.UNDER_REVIEW.value):
             raise ProjectValidationError(
@@ -513,7 +523,7 @@ class SubmissionService:
             submission.status == SubmissionStatus.UNDER_REVIEW.value
             and submission.evaluator_id
             and submission.evaluator_id != evaluator.id
-            and evaluator.role != UserRole.ADMIN
+            and not is_admin
         ):
             raise ProjectConflictError("This submission is already under review by another evaluator.")
 
@@ -563,6 +573,14 @@ class SubmissionService:
         if evaluator.id == submission.user_id:
             raise ProjectForbiddenError("You cannot evaluate your own submission.")
 
+        # Project ownership / authorization verification
+        is_admin = evaluator.role == UserRole.ADMIN
+        is_project_creator = bool(submission.project and submission.project.creator_id == evaluator.id)
+        is_assigned_evaluator = bool(submission.evaluator_id and submission.evaluator_id == evaluator.id)
+
+        if not (is_admin or is_project_creator or is_assigned_evaluator):
+            raise ProjectForbiddenError("You are not authorized to evaluate submissions for this project.")
+
         if submission.status not in (
             SubmissionStatus.SUBMITTED.value,
             SubmissionStatus.UNDER_REVIEW.value,
@@ -576,7 +594,7 @@ class SubmissionService:
         if (
             submission.evaluator_id
             and submission.evaluator_id != evaluator.id
-            and evaluator.role != UserRole.ADMIN
+            and not is_admin
         ):
             raise ProjectForbiddenError("Only the assigned evaluator or an admin may complete this evaluation.")
 

@@ -1,0 +1,43 @@
+# Version control
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile*
+
+# Environment files
+.env*
+
+# Virtual environments
+.venv
+.venv/
+venv/
+env/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & quality caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local tests (not needed in production image)
+tests/
+
+# Local databases and runtime storage
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+
+# Build & package artifacts
+build/
+dist/
+*.egg-info/

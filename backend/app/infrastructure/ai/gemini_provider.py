@@ -51,7 +51,11 @@ class GeminiAIProvider(BaseAIProvider):
     def _call_gemini(self, system_instruction: str, prompt: str) -> dict[str, Any]:
         """Execute a synchronous HTTP request to Gemini REST endpoint with strict timeouts."""
         self._ensure_configured()
-        url = f"{GEMINI_API_BASE}/{self.model}:generateContent?key={self.api_key}"
+        url = f"{GEMINI_API_BASE}/{self.model}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
 
         payload = {
             "system_instruction": {"parts": [{"text": system_instruction}]},
@@ -64,7 +68,7 @@ class GeminiAIProvider(BaseAIProvider):
 
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
-                resp = client.post(url, json=payload)
+                resp = client.post(url, json=payload, headers=headers)
         except httpx.TimeoutException as exc:
             logger.warning("Gemini request timed out after %ds", self.timeout_seconds)
             raise AIProviderError(

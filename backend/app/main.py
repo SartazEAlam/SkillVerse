@@ -53,13 +53,26 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── CORS ─────────────────────────────────────────
+    # ── Middleware Registration ──────────────────────
+    # Starlette executes middleware in reverse addition order (LIFO):
+    # 1. CORSMiddleware handles CORS preflight and origin negotiation.
+    # 2. SecurityHeadersMiddleware (outermost) attaches defensive headers,
+    #    CSP, HSTS, and Cache-Control, and catches unhandled exceptions.
+    from app.infrastructure.security_headers import SecurityHeadersMiddleware
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
+        expose_headers=[],
+        max_age=settings.cors_max_age,
+    )
+
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        settings=settings,
     )
 
     # ── Error handlers ───────────────────────────────

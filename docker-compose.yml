@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: skillverse
       POSTGRES_PASSWORD: skillverse_dev
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -28,7 +28,7 @@ services:
     container_name: skillverse-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -45,19 +45,60 @@ services:
     container_name: skillverse-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      DATABASE_URL: postgresql://skillverse:skillverse_dev@postgres:5432/skillverse
+      DATABASE_URL: postgresql+psycopg2://skillverse:skillverse_dev@postgres:5432/skillverse
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
       JWT_SECRET_KEY: change-me-to-a-random-64-char-string-in-production
+      TRUSTED_PROXIES: '["172.19.0.10"]'
+    volumes:
+      - artifact_data:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
+  # ─────────────────────────────────────────────────
+  # Frontend (Vite SPA + Unprivileged Nginx)
+  # ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: skillverse-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      default:
+        ipv4_address: 172.19.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pgdata:
     driver: local
+  artifact_data:
+    driver: local
 
+networks:
+  default:
+    name: skillverse_default
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16

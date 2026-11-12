@@ -237,7 +237,7 @@ def test_evaluation_pass_flow(
 def test_changes_requested_and_revision_chain(
     client: TestClient,
     auth_headers: dict[str, str],
-    second_evaluator_headers: dict[str, str],
+    creator_headers: dict[str, str],
     published_project: str,
 ) -> None:
     """Failing or changes-requested review triggers immutable revision workflow."""
@@ -266,7 +266,7 @@ def test_changes_requested_and_revision_chain(
     eval_res = client.post(
         f"/api/v1/submissions/{sub_v1_id}/evaluation",
         json=eval_payload,
-        headers=second_evaluator_headers,
+        headers=creator_headers,
     )
     assert eval_res.status_code == 200
     assert eval_res.json()["status"] == "CHANGES_REQUESTED"

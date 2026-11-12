@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.dependencies import (
     get_current_user,
     get_optional_current_user,
@@ -400,10 +401,33 @@ async def upload_artifact(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
-    """Upload deliverable artifact enforcing per-file (20MB), total (50MB), and rate limits."""
+    """Upload deliverable artifact enforcing bounded memory chunking, quotas, and limits."""
     service = ArtifactService(db)
+    max_bytes = settings.storage_max_file_size_mb * 1024 * 1024
+    chunk_size = 64 * 1024
+    chunks: list[bytes] = []
+    total_bytes = 0
+
     try:
-        contents = await file.read()
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": f"Artifact exceeds maximum permitted file size of {settings.storage_max_file_size_mb}MB.",
+                            "details": {"max_size_bytes": max_bytes},
+                        }
+                    },
+                )
+            chunks.append(chunk)
+
+        contents = b"".join(chunks)
         return service.upload_artifact(
             submission_id=submission_id,
             user=current_user,
@@ -414,6 +438,8 @@ async def upload_artifact(
         )
     except ProjectServiceError as exc:
         _handle_service_error(exc)
+    finally:
+        await file.close()
 
 
 @router.get(
@@ -469,6 +495,7 @@ def download_artifact(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-Content-Type-Options": "nosniff",
             "Content-Length": str(file_size),
+            "Cache-Control": "private, no-store",
         }
         return StreamingResponse(
             stream_gen,
